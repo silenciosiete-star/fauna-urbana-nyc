@@ -10,69 +10,86 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 
 ---
 
-## Funcionalidades previstas
+## Tecnologías
 
-### Detección y clasificación
-- YOLO v11 reentrenado con un dataset propio de personajes de Times Square
-- Clasificación de personajes: gorila, Spider-Man, Deadpool, Mickey Mouse, Minnie Mouse, y otros
-- Conteo en tiempo real por tipo de personaje
+| Componente | Tecnología | Notas |
+|------------|------------|-------|
+| Captura del stream | OpenCV + yt-dlp | Hilo independiente para no bloquear la inferencia |
+| Detección y clasificación | YOLO v11 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
+| Tracking entre frames | Supervision (ByteTrack) | Interpola posiciones en los frames no analizados |
+| Descripción de escenas | Gemma 4 (Ollama / OpenRouter) | Solo se llama cuando salta un hito, no por frame |
+| Panel web | Dash + Plotly | |
+| Base de datos | SQLite | |
+| Notificaciones | python-telegram-bot | Alertas y control remoto |
+| Síntesis de voz | pyttsx3 / Coqui TTS | |
+| Configuración | YAML | Zonas, hitos y umbrales sin tocar código |
 
-### Zonas dinámicas
-- Definición interactiva de zonas de interés sobre la imagen
-- Conteo independiente por zona
-- Detección de qué personaje ocupa qué zona en cada momento
-
-### Hitos y alertas
-Situaciones que disparan acciones automáticas:
-
-| Hito | Descripción | Acción |
-|------|-------------|--------|
-| **Avengers Assemble** | 3 o más superhéroes en la misma zona | Email + captura del frame |
-| **Conflicto de identidad** | Dos personajes iguales en la misma zona | Notificación Telegram + registro |
-| **Hora punta de la fauna** | Más de N personajes simultáneos | Alerta + guardado automático |
-| **Avistamiento raro** | Personaje no visto en las últimas horas | Notificación Telegram |
-| **Marvel vs DC** | Spider-Man y Batman detectados a la vez | TTS lo anuncia por altavoz |
-
-### Seguimiento y análisis
-- Tracking de trayectorias por personaje (con color diferente para cada uno)
-- Mapa de calor de zonas con más actividad
-- Historial de apariciones en SQLite
-- Guardado automático de frames en los hitos
-
-### Panel web en tiempo real
-- Conteo actual por personaje
-- Histórico y gráficas temporales
-- Ranking de "celebridades" (quién aparece más y en qué horarios)
-- Localización actual de personajes bajo petición
-
-### Control por Telegram
-- Bot para consultar el estado en tiempo real
-- Comandos: `/donde gorila`, `/cuantos ahora`, `/captura`
-- Configuración de alertas desde el móvil
-
-### Descripción de escenas con LLM
-- Gemma 4 (local vía Ollama u OpenRouter) describe la situación cuando se dispara un hito
-- Ejemplo: *"Hay dos Spider-Men disputándose la esquina norte mientras un gorila observa desde el fondo"*
-
-### Síntesis de voz
-- Anuncio por altavoz de los eventos más destacados
+> **SAM3 descartado:** la segmentación pixel a pixel no aporta lo suficiente para el uso real del proyecto (conteo, tracking, zonas, heatmap) como para justificar su coste computacional.
 
 ---
 
-## Tecnologías
+## Arquitectura de procesamiento
 
-| Componente | Tecnología |
-|------------|------------|
-| Captura del stream | OpenCV + yt-dlp |
-| Detección y clasificación | YOLO v11 (fine-tuned) |
-| Segmentación | SAM3 |
-| Tracking | Supervision |
-| Descripción de escenas | Gemma 4 (Ollama / OpenRouter) |
-| Panel web | Dash + Plotly |
-| Base de datos | SQLite |
-| Notificaciones | python-telegram-bot |
-| Síntesis de voz | pyttsx3 / Coqui TTS |
-| Configuración | YAML |
+La captura y la inferencia van en **hilos separados** para que un frame lento del modelo no bloquee la lectura del stream:
+
+```
+[Hilo captura]  →  cola de frames  →  [Hilo inferencia]  →  [Hilo UI / panel]
+   yt-dlp                                YOLO + Supervision
+   OpenCV                                cada N frames
+```
+
+---
+
+## Dataset para el fine-tuning
+
+El punto más crítico del proyecto. Plan de construcción:
+
+1. **Recopilar frames** del propio stream de Times Square en distintos horarios
+2. **Etiquetar** con Roboflow (clases: `gorila`, `spider-man`, `deadpool`, `mickey`, `minnie`, `otro-disfraz`)
+3. **Aumentado de datos**: rotaciones, cambios de brillo, recortes — los personajes aparecen a distintas distancias y con distintas iluminaciones
+4. **Validación**: reservar un 20% del dataset para test, medir mAP por clase
+
+Clases objetivo iniciales: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie`
+
+---
+
+## MVP — Lo que tiene que funcionar
+
+El mínimo presentable y funcional:
+
+- [ ] Captura del stream de YouTube en tiempo real
+- [ ] Detección y clasificación de personajes con YOLO fine-tuned
+- [ ] Conteo por personaje con visualización sobre el frame
+- [ ] Al menos 2 zonas configurables por YAML
+- [ ] 3 hitos funcionando con guardado de frame + notificación Telegram
+- [ ] Registro de cada detección en SQLite (timestamp, personaje, zona)
+- [ ] Tracking de trayectorias con Supervision
+
+---
+
+## Extras — Mejoras una vez el MVP funciona
+
+- [ ] Panel web con histórico y gráficas temporales (Dash + Plotly)
+- [ ] Bot de Telegram interactivo con comandos (`/donde gorila`, `/cuantos ahora`, `/captura`)
+- [ ] Descripción de la escena con Gemma 4 cuando salta un hito
+- [ ] Síntesis de voz (TTS) anunciando los eventos por altavoz
+- [ ] Mapa de calor de zonas con más actividad
+- [ ] Zonas dibujables en tiempo real (en lugar de solo por config)
+- [ ] Despliegue en Docker
+
+---
+
+## Hitos definidos
+
+Para evitar falsos positivos, un hito solo se dispara si la condición se mantiene durante **al menos 5 frames consecutivos**.
+
+| Hito | Condición | Zona | Acción |
+|------|-----------|------|--------|
+| **Avengers Assemble** | 3 o más superhéroes detectados | Cualquier zona | Email + captura + Telegram |
+| **Conflicto de identidad** | 2 personajes de la misma clase | Misma zona | Telegram + registro en BD |
+| **Hora punta de la fauna** | Total de personajes > umbral configurable | Frame completo | Captura automática |
+| **Avistamiento raro** | Personaje ausente más de X minutos reaparece | Cualquier zona | Telegram |
+| **Marvel vs DC** | Spider-Man y Batman simultáneos | Cualquier zona | TTS por altavoz |
 
 ---
 
@@ -80,39 +97,23 @@ Situaciones que disparan acciones automáticas:
 
 ```
 fauna-urbana-nyc/
-├── config/              # Configuración: zonas, hitos, umbrales
-├── datos/               # Datasets para entrenamiento
-├── modelos/             # Pesos del modelo entrenado
+├── config/
+│   └── config.yaml          # Zonas, hitos, umbrales, URL del stream
+├── datos/                   # Frames recopilados y dataset etiquetado
+├── modelos/                 # Pesos del modelo fine-tuned
 ├── src/
-│   ├── captura.py       # Lectura del stream de YouTube
-│   ├── detector.py      # Inferencia con YOLO
-│   ├── rastreador.py    # Tracking con Supervision
-│   ├── zonas.py         # Gestión de zonas interactivas
-│   ├── eventos.py       # Hitos y acciones asociadas
-│   ├── base_datos.py    # Registro en SQLite
-│   ├── notificador.py   # Telegram, email, TTS
-│   └── panel.py         # Dashboard web
+│   ├── captura.py           # Lectura del stream (hilo independiente)
+│   ├── detector.py          # Inferencia YOLO cada N frames
+│   ├── rastreador.py        # Tracking con Supervision/ByteTrack
+│   ├── zonas.py             # Gestión de zonas configurables
+│   ├── eventos.py           # Detección de hitos y acciones
+│   ├── base_datos.py        # Registro en SQLite
+│   ├── notificador.py       # Telegram, email, TTS
+│   └── panel.py             # Dashboard web (Dash)
 ├── entrenamiento/
-│   ├── preparar_dataset.py
-│   └── entrenar.py
-├── capturas/            # Frames guardados en hitos
-└── principal.py         # Punto de entrada
+│   ├── recopilar_frames.py  # Extrae frames del stream para el dataset
+│   ├── preparar_dataset.py  # Conversión y splits train/val/test
+│   └── entrenar.py          # Fine-tuning de YOLO v11
+├── capturas/                # Frames guardados al dispararse un hito
+└── principal.py             # Punto de entrada
 ```
-
----
-
-## Estado del proyecto
-
-- [ ] Estructura base y captura del stream
-- [ ] Pipeline de detección con YOLO genérico
-- [ ] Preparación del dataset de personajes
-- [ ] Fine-tuning de YOLO v11
-- [ ] Sistema de zonas interactivas
-- [ ] Tracking y trayectorias
-- [ ] Hitos y acciones
-- [ ] Registro en base de datos
-- [ ] Panel web
-- [ ] Bot de Telegram
-- [ ] Descripción de escenas con Gemma 4
-- [ ] Síntesis de voz
-- [ ] Mapa de calor
