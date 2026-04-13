@@ -17,7 +17,7 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 | Captura del stream | OpenCV + yt-dlp | Hilo independiente para no bloquear la inferencia |
 | Detección y clasificación | YOLO v11 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
 | Tracking entre frames | Supervision (ByteTrack) | Interpola posiciones en los frames no analizados |
-| Descripción de escenas | Gemma 4 (Ollama / OpenRouter) | Solo se llama cuando salta un hito, no por frame |
+| Verificador y narrador | Gemma 4 (Ollama / OpenRouter) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. |
 | Panel web | Dash + Plotly | |
 | Base de datos | SQLite | |
 | Notificaciones | python-telegram-bot | Alertas y control remoto |
@@ -30,13 +30,26 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 
 ## Arquitectura de procesamiento
 
-La captura y la inferencia van en **hilos separados** para que un frame lento del modelo no bloquee la lectura del stream:
+La captura y la inferencia van en **hilos separados** para que un frame lento del modelo no bloquee la lectura del stream. Gemma se llama de forma asíncrona para no bloquear el stream mientras razona:
 
 ```
 [Hilo captura]  →  cola de frames  →  [Hilo inferencia]  →  [Hilo UI / panel]
    yt-dlp                                YOLO + Supervision
    OpenCV                                cada N frames
+                                              |
+                                     ¿posible hito?
+                                              ↓
+                                    [Gemma 4 — asíncrono]
+                                    1. ¿Es real el hito?
+                                    2. Redacta mensaje jocoso
+                                              ↓
+                                    [Notificador — Telegram / TTS]
 ```
+
+**Ejemplo de notificación generada por Gemma:**
+> *"Spider-Man y Deadpool llevan varios minutos negociándose la esquina norte. El gorila los observa desde el fondo con escepticismo evidente. He decidido alertarte."*
+
+Si Gemma determina que es un falso positivo, el hito no se dispara y queda registrado como descartado en SQLite junto al razonamiento.
 
 ---
 
@@ -71,7 +84,7 @@ El mínimo presentable y funcional:
 
 - [ ] Panel web con histórico y gráficas temporales (Dash + Plotly)
 - [ ] Bot de Telegram interactivo con comandos (`/donde gorila`, `/cuantos ahora`, `/captura`)
-- [ ] Descripción de la escena con Gemma 4 cuando salta un hito
+- [ ] Verificador Gemma 4: confirmación de hito + mensaje jocoso generado
 - [ ] Síntesis de voz (TTS) anunciando los eventos por altavoz
 - [ ] Mapa de calor de zonas con más actividad
 - [ ] Zonas dibujables en tiempo real (en lugar de solo por config)
@@ -106,9 +119,10 @@ fauna-urbana-nyc/
 │   ├── detector.py          # Inferencia YOLO cada N frames
 │   ├── rastreador.py        # Tracking con Supervision/ByteTrack
 │   ├── zonas.py             # Gestión de zonas configurables
-│   ├── eventos.py           # Detección de hitos y acciones
-│   ├── base_datos.py        # Registro en SQLite
-│   ├── notificador.py       # Telegram, email, TTS
+│   ├── eventos.py           # Detección de hitos, llama a verificador.py
+│   ├── verificador.py       # Gemma 4 asíncrono: confirma hito y genera mensaje jocoso
+│   ├── base_datos.py        # Registro en SQLite (incluye razonamiento de Gemma)
+│   ├── notificador.py       # Telegram, TTS — despacha el mensaje generado por Gemma
 │   └── panel.py             # Dashboard web (Dash)
 ├── entrenamiento/
 │   ├── recopilar_frames.py  # Extrae frames del stream para el dataset

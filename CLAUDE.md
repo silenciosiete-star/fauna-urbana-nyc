@@ -22,10 +22,48 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 |----------|--------|
 | YOLO v11 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido |
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
-| Gemma 4 solo cuando salta un hito | No es viable llamarla por frame; así no hay coste de rendimiento |
+| Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
 | Captura e inferencia en hilos separados | Evita que un frame lento de YOLO bloquee la lectura del stream |
 | Procesar 1 de cada N frames (configurable) | Supervision/ByteTrack interpola el tracking entre frames no analizados |
 | Hitos con umbral de 5 frames consecutivos | Evita falsos positivos por detecciones puntuales |
+
+---
+
+## Patrón del verificador Gemma — cómo funciona
+
+Cuando `eventos.py` detecta un posible hito (condición cumplida durante N frames consecutivos), en lugar de disparar directamente la acción se llama a `verificador.py` de forma **asíncrona** para no bloquear el stream.
+
+**Flujo:**
+```
+eventos.py         →       verificador.py          →     notificador.py
+                                                    
+"posible hito"     →  frame + prompt a Gemma 4     →  mensaje de Gemma
+                      (verificación + narración)       vía Telegram / TTS
+```
+
+**El prompt a Gemma tiene dos objetivos en una sola llamada:**
+```
+Eres el vigilante sarcástico de Times Square.
+El sistema ha detectado un posible hito: [descripción del hito].
+
+1. ¿Se cumple realmente la condición en la imagen? Razona brevemente.
+2. Si se cumple, escribe un mensaje de alerta divertido describiendo
+   lo que está pasando (máximo 2 frases, tono jocoso).
+   Si NO se cumple, responde únicamente: FALSO_POSITIVO
+```
+
+**Ejemplo de salida de Gemma:**
+> *"Spider-Man y Deadpool llevan varios minutos negociándose la esquina norte. El gorila los observa desde el fondo con escepticismo evidente. He decidido alertarte."*
+
+**Qué se registra en SQLite por cada hito:**
+- Timestamp
+- Tipo de hito
+- Zona
+- Razonamiento de Gemma (por qué confirmó o descartó)
+- Mensaje de notificación generado
+- Ruta al frame guardado
+
+Si Gemma devuelve `FALSO_POSITIVO`, el hito no se dispara y se registra como descartado.
 
 ---
 
@@ -53,9 +91,10 @@ src/
 ├── detector.py      # Inferencia YOLO cada N frames. Lee la cola, escribe resultados.
 ├── rastreador.py    # Supervision/ByteTrack. Mantiene IDs de tracking entre frames.
 ├── zonas.py         # Carga zonas desde config.yaml. Comprueba si un bbox está en zona.
-├── eventos.py       # Evalúa condiciones de hitos frame a frame. Dispara acciones.
-├── base_datos.py    # Inserta y consulta registros en SQLite.
-├── notificador.py   # Telegram, TTS. Recibe mensajes y los despacha.
+├── eventos.py       # Evalúa condiciones de hitos frame a frame. Llama a verificador.py.
+├── verificador.py   # Llama a Gemma 4 de forma asíncrona: verifica el hito y genera el mensaje jocoso.
+├── base_datos.py    # Inserta y consulta registros en SQLite (incluye razonamiento de Gemma).
+├── notificador.py   # Telegram, TTS. Recibe el mensaje generado por Gemma y lo despacha.
 └── panel.py         # Servidor Dash. Lee de SQLite para las gráficas.
 
 entrenamiento/
