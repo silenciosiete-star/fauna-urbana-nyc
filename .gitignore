@@ -1,0 +1,53 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Modelos entrenados (son grandes, se gestionan aparte)
+modelos/*.pt
+modelos/*.onnx
+modelos/*.weights
+
+# Datos y datasets
+datos/datasets/
+datos/*.zip
+datos/*.tar.gz
+
+# Capturas (pueden acumularse mucho)
+capturas/*.jpg
+capturas/*.png
+
+# Base de datos local
+*.db
+*.sqlite
+
+# Variables de entorno y credenciales
+.env
+*.json
+!ejemplo.env
+
+# Configuración local (sobreescribe config.yaml)
+config/local_*.yaml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
