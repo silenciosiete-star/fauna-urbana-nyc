@@ -53,16 +53,33 @@ Si Gemma determina que es un falso positivo, el hito no se dispara y queda regis
 
 ---
 
-## Dataset para el fine-tuning
+## Fine-tuning de YOLO v11
 
-El punto más crítico del proyecto. Plan de construcción:
+Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool.
 
-1. **Recopilar frames** del propio stream de Times Square en distintos horarios
-2. **Etiquetar** con Roboflow (clases: `gorila`, `spider-man`, `deadpool`, `mickey`, `minnie`, `otro-disfraz`)
-3. **Aumentado de datos**: rotaciones, cambios de brillo, recortes — los personajes aparecen a distintas distancias y con distintas iluminaciones
-4. **Validación**: reservar un 20% del dataset para test, medir mAP por clase
+### Paso 1 — Recopilar frames (`entrenamiento/recopilar_frames.py`)
 
-Clases objetivo iniciales: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie`
+Extraer capturas del stream en distintos horarios (mañana, tarde, noche) para cubrir variedad de iluminación y distancias. Los personajes son escasos y a veces no aparecen, así que hay que ser paciente o complementar con imágenes de otras fuentes (eventos, convenciones).
+
+### Paso 2 — Etiquetar con Roboflow
+
+Dibujar bounding boxes y asignar clase a cada personaje. Roboflow tiene herramientas de auto-etiquetado que aceleran el proceso.
+
+Clases objetivo: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie`
+
+### Paso 3 — Preparar el dataset (`entrenamiento/preparar_dataset.py`)
+
+- Exportar desde Roboflow en formato YOLO
+- Split: 70% train / 10% validación / 20% test
+- Aumentado de datos: rotaciones, cambios de brillo y contraste, recortes — compensa el tamaño pequeño del dataset
+
+### Paso 4 — Entrenar (`entrenamiento/entrenar.py`)
+
+Fine-tuning de YOLO v11 partiendo de los pesos preentrenados de Ultralytics (transfer learning). No se entrena desde cero.
+
+### Paso 5 — Evaluar y sustituir
+
+Medir **mAP por clase** sobre el set de test. Si los resultados son aceptables, sustituir el modelo genérico por el fine-tuned en `detector.py` cambiando la ruta en `config.yaml`.
 
 ---
 
