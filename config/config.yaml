@@ -1,0 +1,73 @@
+# Configuración de Fauna Urbana NYC
+# Este archivo es la única fuente de verdad para todos los parámetros del sistema.
+
+stream:
+  url: "https://www.youtube.com/watch?v=rnXIjl_Rzy4"  # Times Square 4K
+  frames_por_inferencia: 4  # Analizar 1 de cada N frames con YOLO
+
+modelo:
+  ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
+  confianza_minima: 0.5
+  clases:
+    0: "gorila"
+    1: "spider-man"
+    2: "deadpool"
+    3: "mickey"
+    4: "minnie"
+
+zonas:
+  - nombre: "esquina_norte"
+    puntos: [[100, 50], [500, 50], [500, 300], [100, 300]]  # Ajustar al stream real
+  - nombre: "zona_foto"
+    puntos: [[400, 200], [800, 200], [800, 500], [400, 500]]
+  - nombre: "fondo"
+    puntos: [[0, 400], [1280, 400], [1280, 720], [0, 720]]
+
+hitos:
+  frames_consecutivos: 5  # Frames que debe cumplirse la condición para disparar el hito
+
+  avengers_assemble:
+    activo: true
+    superheroes_minimos: 3        # Número mínimo de superhéroes simultáneos
+    zona: null                    # null = cualquier zona del frame
+    cooldown_segundos: 120        # Tiempo mínimo entre disparos del mismo hito
+
+  conflicto_identidad:
+    activo: true
+    zona: "misma"                 # Dos del mismo tipo en la misma zona
+    cooldown_segundos: 60
+
+  hora_punta:
+    activo: true
+    personajes_minimos: 5
+    zona: null
+    cooldown_segundos: 300
+
+  avistamiento_raro:
+    activo: true
+    ausencia_minutos: 30          # Minutos sin ver el personaje para considerar reaparición
+    cooldown_segundos: 1800
+
+  marvel_vs_dc:
+    activo: true
+    personaje_marvel: "spider-man"
+    personaje_dc: "batman"        # Pendiente de añadir batman al dataset
+    zona: null
+    cooldown_segundos: 180
+
+notificaciones:
+  telegram:
+    activo: false                 # Activar cuando se configure el bot
+    token: ""                     # Rellenar con el token del bot de Telegram
+    chat_id: ""
+
+  tts:
+    activo: false
+    velocidad: 150
+
+base_datos:
+  ruta: "fauna_urbana.db"
+
+capturas:
+  carpeta: "capturas/"
+  guardar_en_hito: true
