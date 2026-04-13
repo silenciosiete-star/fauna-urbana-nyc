@@ -8,6 +8,13 @@ stream:
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
   confianza_minima: 0.5
+
+gemma:
+  # Proveedor activo: "huggingface" (desarrollo) o "ollama" (producción red local)
+  # Las credenciales y la URL van en .env
+  proveedor: "huggingface"
+  modelo_nombre: "google/gemma-3-27b-it"  # Mismo modelo en ambos proveedores
+  timeout_segundos: 15  # Tiempo máximo de espera antes de descartar la verificación
   clases:
     0: "gorila"
     1: "spider-man"
@@ -58,8 +65,7 @@ hitos:
 notificaciones:
   telegram:
     activo: false                 # Activar cuando se configure el bot
-    token: ""                     # Rellenar con el token del bot de Telegram
-    chat_id: ""
+    # Las credenciales van en .env, no aquí. Ver .env.example
 
   tts:
     activo: false

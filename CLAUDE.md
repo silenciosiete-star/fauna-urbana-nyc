@@ -23,6 +23,7 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 | YOLO v11 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido |
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
 | Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
+| Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |
 | Captura e inferencia en hilos separados | Evita que un frame lento de YOLO bloquee la lectura del stream |
 | Procesar 1 de cada N frames (configurable) | Supervision/ByteTrack interpola el tracking entre frames no analizados |
 | Hitos con umbral de 5 frames consecutivos | Evita falsos positivos por detecciones puntuales |
@@ -74,7 +75,7 @@ Si Gemma devuelve `FALSO_POSITIVO`, el hito no se dispara y se registra como des
 | Captura del stream | OpenCV + yt-dlp |
 | Detección y clasificación | YOLO v11 (ultralytics) |
 | Tracking | Supervision + ByteTrack |
-| LLM para descripción | Gemma 4 vía Ollama o OpenRouter |
+| LLM verificador y narrador | Gemma 4 — HuggingFace (desarrollo) / Ollama local en 192.168.0.135 (producción) |
 | Panel web | Dash + Plotly |
 | Base de datos | SQLite |
 | Notificaciones | python-telegram-bot |
