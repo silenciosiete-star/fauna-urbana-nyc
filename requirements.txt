@@ -1,0 +1,24 @@
+# Captura del stream
+yt-dlp
+opencv-python
+
+# Detección y tracking
+ultralytics
+supervision
+
+# LLM verificador (compatible con HuggingFace y Ollama)
+httpx
+
+# Panel web
+dash
+plotly
+
+# Notificaciones
+python-telegram-bot
+pyttsx3
+
+# Utilidades
+pyyaml
+python-dotenv
+loguru
+numpy
