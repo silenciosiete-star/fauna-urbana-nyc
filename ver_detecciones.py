@@ -1,72 +1,68 @@
 """Script temporal para visualizar el stream con detecciones en vivo."""
 import sys
-import time
 
 import cv2
-import numpy as np
 import supervision as sv
-
-sys.path.insert(0, "src")
-from captura import CapturadorStream
-from detector import Detector, ResultadoDeteccion
+import yt_dlp
+from ultralytics import YOLO
 
 URL = "https://www.youtube.com/watch?v=rnXIjl_Rzy4"
-ANCHO_DISPLAY = 960    # Solo afecta a la ventana, YOLO recibe el frame completo
-FRAMES_INFERENCIA = 10  # 1 de cada 10 frames en máquina modesta
+RUTA_MODELO = "modelos/yolo11n.pt"
+FRAMES_INFERENCIA = 10  # Inferencia cada N frames
+ANCHO_DISPLAY = 960     # Solo para la ventana, no afecta a la inferencia
 
+
+def obtener_url_directa(url: str) -> str:
+    opciones = {"format": "best[ext=mp4]/best", "quiet": True}
+    with yt_dlp.YoutubeDL(opciones) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return info["url"]
+
+
+print("Obteniendo URL del stream...")
+url_directa = obtener_url_directa(URL)
+
+modelo = YOLO(RUTA_MODELO)
 anotador_cajas = sv.BoxAnnotator()
 anotador_etiquetas = sv.LabelAnnotator()
 
-capturador = CapturadorStream(URL)
-detector = Detector(
-    capturador.cola,
-    ruta_modelo="modelos/fauna_urbana.pt",
-    frames_por_inferencia=FRAMES_INFERENCIA,
-)
+cap = cv2.VideoCapture(url_directa)
+if not cap.isOpened():
+    print("Error: no se pudo abrir el stream")
+    sys.exit(1)
 
-capturador.iniciar()
-detector.iniciar()
+print("Stream abierto. Pulsa Q para salir.")
 
-print("Iniciando... (pulsa Q para salir)")
-
-ultimo: ResultadoDeteccion | None = None
+contador = 0
+ultimas_detecciones = sv.Detections.empty()
+ultimas_etiquetas: list[str] = []
 
 while True:
-    if not detector.cola_salida.empty():
-        ultimo = detector.cola_salida.get()
-
-    if ultimo is None:
-        time.sleep(0.05)
-        continue
-
-    frame = ultimo.frame.copy()
-    dets = ultimo.detecciones
-
-    # Escalar bounding boxes a la resolución de display
-    alto_orig, ancho_orig = frame.shape[:2]
-    alto_display = int(alto_orig * ANCHO_DISPLAY / ancho_orig)
-    escala_x = ANCHO_DISPLAY / ancho_orig
-    escala_y = alto_display / alto_orig
-
-    frame = cv2.resize(frame, (ANCHO_DISPLAY, alto_display))
-
-    if len(dets) > 0:
-        dets_escaladas = sv.Detections(
-            xyxy=dets.xyxy * [escala_x, escala_y, escala_x, escala_y],
-            confidence=dets.confidence,
-            class_id=dets.class_id,
-        )
-        etiquetas = [
-            f"{detector._modelo.names[int(cid)]} {conf:.0%}"
-            for cid, conf in zip(dets.class_id, dets.confidence)
-        ]
-        frame = anotador_cajas.annotate(scene=frame, detections=dets_escaladas)
-        frame = anotador_etiquetas.annotate(scene=frame, detections=dets_escaladas, labels=etiquetas)
-
-    cv2.imshow("Fauna Urbana NYC — detecciones", frame)
-    if cv2.waitKey(30) & 0xFF == ord("q"):
+    ok, frame = cap.read()
+    if not ok:
+        print("Stream interrumpido")
         break
 
-capturador.detener()
-detector.detener()
+    contador += 1
+    if contador % FRAMES_INFERENCIA == 0:
+        resultado = modelo(frame, verbose=False)[0]
+        ultimas_detecciones = sv.Detections.from_ultralytics(resultado)
+        ultimas_etiquetas = [
+            f"{modelo.names[int(cid)]} {conf:.0%}"
+            for cid, conf in zip(ultimas_detecciones.class_id, ultimas_detecciones.confidence)
+        ]
+
+    frame_display = frame.copy()
+    if len(ultimas_detecciones) > 0:
+        frame_display = anotador_cajas.annotate(scene=frame_display, detections=ultimas_detecciones)
+        frame_display = anotador_etiquetas.annotate(scene=frame_display, detections=ultimas_detecciones, labels=ultimas_etiquetas)
+
+    alto = int(frame.shape[0] * ANCHO_DISPLAY / frame.shape[1])
+    frame_display = cv2.resize(frame_display, (ANCHO_DISPLAY, alto))
+
+    cv2.imshow("Fauna Urbana NYC — detecciones", frame_display)
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
 cv2.destroyAllWindows()
