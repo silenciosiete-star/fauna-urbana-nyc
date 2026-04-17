@@ -20,7 +20,7 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 
 | Decisión | Motivo |
 |----------|--------|
-| YOLO v11 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido |
+| YOLO v11 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido. Dataset mixto: personajes (anotados a mano) + vehículos COCO (ya anotados). Un solo modelo cubre ambas zonas. |
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
 | Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
 | Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |

@@ -55,23 +55,35 @@ Si Gemma determina que es un falso positivo, el hito no se dispara y queda regis
 
 ## Fine-tuning de YOLO v11
 
-Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool.
+Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool, y también mantener la detección de vehículos para la zona de tráfico.
+
+### Estrategia: entrenamiento mixto (personajes + vehículos)
+
+El modelo se entrena con **un único dataset** que combina:
+- Imágenes de personajes disfrazados de Times Square (anotadas a mano)
+- Imágenes de vehículos del dataset COCO (importadas directamente desde Roboflow sin anotar a mano)
+
+Así el modelo resultante detecta personajes Y vehículos, y basta con un solo modelo en el sistema.
+
+Clases objetivo: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie` · `coche` · `taxi` · `autobus` · `moto`
+
+> **Desequilibrio de clases:** COCO tiene miles de imágenes de vehículos y el dataset de personajes será pequeño. Hay que compensarlo con pesos por clase o sobremuestreo de personajes durante el entrenamiento.
 
 ### Paso 1 — Recopilar frames (`entrenamiento/recopilar_frames.py`)
 
-Extraer capturas del stream en distintos horarios (mañana, tarde, noche) para cubrir variedad de iluminación y distancias. Los personajes son escasos y a veces no aparecen, así que hay que ser paciente o complementar con imágenes de otras fuentes (eventos, convenciones).
+Extraer capturas del stream en distintos horarios (mañana, tarde, noche) para cubrir variedad de iluminación y distancias. Complementar con imágenes de personajes de otras fuentes (eventos, convenciones) si el stream no da suficientes muestras.
 
 ### Paso 2 — Etiquetar con Roboflow
 
-Dibujar bounding boxes y asignar clase a cada personaje. Roboflow tiene herramientas de auto-etiquetado que aceleran el proceso.
-
-Clases objetivo: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie`
+- Personajes: anotar bounding boxes a mano. Roboflow tiene auto-etiquetado que acelera el proceso.
+- Vehículos: importar directamente desde COCO en Roboflow, ya vienen anotados.
+- Mezclar ambos en un único proyecto de Roboflow.
 
 ### Paso 3 — Preparar el dataset (`entrenamiento/preparar_dataset.py`)
 
 - Exportar desde Roboflow en formato YOLO
 - Split: 70% train / 10% validación / 20% test
-- Aumentado de datos: rotaciones, cambios de brillo y contraste, recortes — compensa el tamaño pequeño del dataset
+- Aumentado de datos: rotaciones, cambios de brillo y contraste, recortes
 
 ### Paso 4 — Entrenar (`entrenamiento/entrenar.py`)
 
@@ -79,7 +91,7 @@ Fine-tuning de YOLO v11 partiendo de los pesos preentrenados de Ultralytics (tra
 
 ### Paso 5 — Evaluar y sustituir
 
-Medir **mAP por clase** sobre el set de test. Si los resultados son aceptables, sustituir el modelo genérico por el fine-tuned en `detector.py` cambiando la ruta en `config.yaml`.
+Medir **mAP por clase** sobre el set de test para personajes y vehículos por separado. Si los resultados son aceptables, sustituir el modelo genérico en `config.yaml`.
 
 ---
 
