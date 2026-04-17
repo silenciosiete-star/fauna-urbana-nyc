@@ -26,6 +26,7 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 | Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |
 | Captura e inferencia en hilos separados | Evita que un frame lento de YOLO bloquee la lectura del stream |
 | Procesar 1 de cada N frames (configurable) | Supervision/ByteTrack interpola el tracking entre frames no analizados |
+| imgsz pendiente de ajustar en fine-tuning | La cámara es lejana y los personajes son objetos pequeños. Valorar subir imgsz a 1280 o recortar la zona derecha del frame antes de la inferencia. Tradeoff velocidad/precisión. |
 | Hitos con umbral de 5 frames consecutivos | Evita falsos positivos por detecciones puntuales |
 
 ---
