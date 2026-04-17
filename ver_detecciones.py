@@ -16,7 +16,11 @@ ANCHO_DISPLAY = 960     # Solo para la ventana, no afecta a la inferencia
 
 
 def obtener_url_directa(url: str) -> str:
-    opciones = {"format": "best[ext=mp4]/best", "quiet": True}
+    opciones = {
+        "format": "best[ext=mp4]/best",
+        "quiet": True,
+        "extractor_args": {"youtube": {"js_runtimes": ["nodejs"]}},
+    }
     with yt_dlp.YoutubeDL(opciones) as ydl:
         info = ydl.extract_info(url, download=False)
         return info["url"]
