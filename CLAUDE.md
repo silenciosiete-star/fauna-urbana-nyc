@@ -146,4 +146,9 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Entorno virtual y dependencias instaladas
 - [x] `captura.py`: hilo de lectura del stream con reconexión automática
 - [x] `detector.py`: inferencia YOLO cada N frames, fallback automático a modelo genérico
-- [ ] `rastreador.py`, `zonas.py`, `eventos.py`, `base_datos.py`, `notificador.py`, `principal.py`
+- [ ] `rastreador.py`: tracking con Supervision/ByteTrack
+- [ ] `zonas.py`, `eventos.py`, `verificador.py`, `base_datos.py`, `notificador.py`, `principal.py`
+
+### Pendiente al retomar
+- Verificar que `ver_detecciones.py` muestra el stream con detecciones (posible bloqueo temporal de YouTube por IP — el código es correcto)
+- Continuar con `rastreador.py`
