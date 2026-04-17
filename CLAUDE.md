@@ -97,6 +97,7 @@ src/
 ├── verificador.py   # Llama a Gemma 4 de forma asíncrona: verifica el hito y genera el mensaje jocoso.
 ├── base_datos.py    # Inserta y consulta registros en SQLite (incluye razonamiento de Gemma).
 ├── notificador.py   # Telegram, TTS. Recibe el mensaje generado por Gemma y lo despacha.
+├── visualizador.py  # Ventana OpenCV en directo: bboxes, IDs de tracking, límites de zona.
 └── panel.py         # Servidor Dash. Lee de SQLite para las gráficas.
 
 entrenamiento/
@@ -121,7 +122,8 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `base_datos.py`: registro en SQLite
 - [x] `notificador.py`: notificación Telegram al disparar hito
 - [x] `principal.py`: orquestar todo
-- [ ] **Pruebas de integración con stream real** — pendiente
+- [ ] `visualizador.py`: ventana en directo con bboxes, IDs de tracking y límites de zona
+- [x] **Pruebas de integración con stream real** — superadas
 
 ### Fase 2 — Fine-tuning
 - [ ] `recopilar_frames.py`: extraer frames del stream
@@ -156,6 +158,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Pruebas de integración**: arrancar `python principal.py` y verificar que el pipeline completo funciona con el stream real
-- Verificar que `ver_detecciones.py` muestra el stream con detecciones (posible bloqueo temporal de YouTube por IP — el código es correcto)
+- **Visualizador integrado**: implementar `src/visualizador.py` (ventana en directo con bboxes, IDs, zonas) y engancharlo al pipeline en `principal.py`. Antes de implementar, verificar que `ver_detecciones.py` muestra imagen — hay un problema conocido de ventana negra, posiblemente Qt/Wayland; probar con `QT_QPA_PLATFORM=xcb` ya configurado o diagnosticar si persiste.
 - Fase 2: recopilar frames para el dataset de fine-tuning

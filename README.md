@@ -22,6 +22,7 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 | Base de datos | SQLite | |
 | Notificaciones | python-telegram-bot | Alertas y control remoto |
 | Síntesis de voz | pyttsx3 / Coqui TTS | |
+| Visualización en directo | OpenCV | Ventana con bboxes, IDs de tracking y límites de zona |
 | Configuración | YAML | Zonas, hitos y umbrales sin tocar código |
 
 > **SAM3 descartado:** la segmentación pixel a pixel no aporta lo suficiente para el uso real del proyecto (conteo, tracking, zonas, heatmap) como para justificar su coste computacional.
@@ -106,7 +107,8 @@ El mínimo presentable y funcional:
 - [x] 5 hitos implementados con guardado de frame + notificación Telegram
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
 - [x] Tracking de trayectorias con Supervision
-- [ ] **Pruebas de integración con stream real** — pendiente
+- [x] **Pruebas de integración con stream real** — superadas
+- [ ] Visualización en directo del stream con bboxes, IDs de tracking y límites de zona
 
 ---
 
