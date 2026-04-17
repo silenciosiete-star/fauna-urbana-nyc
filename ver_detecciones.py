@@ -1,5 +1,8 @@
 """Script temporal para visualizar el stream con detecciones en vivo."""
+import os
 import sys
+
+os.environ["QT_QPA_PLATFORM"] = "xcb"  # Forzar X11 en sistemas con Wayland
 
 import cv2
 import supervision as sv

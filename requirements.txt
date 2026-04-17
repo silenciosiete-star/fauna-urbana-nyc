@@ -1,6 +1,8 @@
 # Captura del stream
 yt-dlp
 opencv-python
+# Nota Linux: si imshow muestra ventana negra, el script ver_detecciones.py
+# ya incluye os.environ["QT_QPA_PLATFORM"] = "xcb" para forzar X11
 
 # Detección y tracking
 ultralytics
