@@ -99,13 +99,14 @@ Medir **mAP por clase** sobre el set de test para personajes y vehículos por se
 
 El mínimo presentable y funcional:
 
-- [ ] Captura del stream de YouTube en tiempo real
-- [ ] Detección y clasificación de personajes con YOLO fine-tuned
-- [ ] Conteo por personaje con visualización sobre el frame
-- [ ] Al menos 2 zonas configurables por YAML
-- [ ] 3 hitos funcionando con guardado de frame + notificación Telegram
-- [ ] Registro de cada detección en SQLite (timestamp, personaje, zona)
-- [ ] Tracking de trayectorias con Supervision
+- [x] Captura del stream de YouTube en tiempo real
+- [ ] Detección y clasificación de personajes con YOLO fine-tuned *(pendiente fine-tuning — funciona con modelo genérico)*
+- [x] Conteo por personaje con visualización sobre el frame
+- [x] Al menos 2 zonas configurables por YAML
+- [x] 5 hitos implementados con guardado de frame + notificación Telegram
+- [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
+- [x] Tracking de trayectorias con Supervision
+- [ ] **Pruebas de integración con stream real** — pendiente
 
 ---
 
@@ -113,7 +114,6 @@ El mínimo presentable y funcional:
 
 - [ ] Panel web con histórico y gráficas temporales (Dash + Plotly)
 - [ ] Bot de Telegram interactivo con comandos (`/donde gorila`, `/cuantos ahora`, `/captura`)
-- [ ] Verificador Gemma 4: confirmación de hito + mensaje jocoso generado
 - [ ] Síntesis de voz (TTS) anunciando los eventos por altavoz
 - [ ] Mapa de calor de zonas con más actividad
 - [ ] Zonas dibujables en tiempo real (en lugar de solo por config)

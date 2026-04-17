@@ -113,14 +113,15 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 ## Fases de desarrollo
 
 ### Fase 1 — MVP (mínimo presentable)
-- [ ] `captura.py`: leer stream de YouTube con yt-dlp + OpenCV en hilo separado
-- [ ] `detector.py`: inferencia con YOLO genérico (aún sin fine-tuning) para validar el pipeline
-- [ ] `rastreador.py`: tracking básico con Supervision
-- [ ] `zonas.py`: cargar zonas desde config y comprobar pertenencia de detecciones
-- [ ] `eventos.py`: 3 hitos funcionando con guardado de frame
-- [ ] `base_datos.py`: registro en SQLite
-- [ ] `notificador.py`: notificación Telegram al disparar hito
-- [ ] `principal.py`: orquestar todo
+- [x] `captura.py`: leer stream de YouTube con yt-dlp + OpenCV en hilo separado
+- [x] `detector.py`: inferencia con YOLO genérico (aún sin fine-tuning) para validar el pipeline
+- [x] `rastreador.py`: tracking básico con Supervision
+- [x] `zonas.py`: cargar zonas desde config y comprobar pertenencia de detecciones
+- [x] `eventos.py`: 5 hitos implementados con umbral de frames consecutivos y cooldown
+- [x] `base_datos.py`: registro en SQLite
+- [x] `notificador.py`: notificación Telegram al disparar hito
+- [x] `principal.py`: orquestar todo
+- [ ] **Pruebas de integración con stream real** — pendiente
 
 ### Fase 2 — Fine-tuning
 - [ ] `recopilar_frames.py`: extraer frames del stream
@@ -146,9 +147,15 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Entorno virtual y dependencias instaladas
 - [x] `captura.py`: hilo de lectura del stream con reconexión automática
 - [x] `detector.py`: inferencia YOLO cada N frames, fallback automático a modelo genérico
-- [ ] `rastreador.py`: tracking con Supervision/ByteTrack
-- [ ] `zonas.py`, `eventos.py`, `verificador.py`, `base_datos.py`, `notificador.py`, `principal.py`
+- [x] `rastreador.py`: tracking con Supervision/ByteTrack
+- [x] `zonas.py`: carga zonas desde config, filtra detecciones con PolygonZone
+- [x] `eventos.py`: 5 hitos con umbral de frames consecutivos, cooldown y cola de salida
+- [x] `verificador.py`: llama a Gemma (HuggingFace o Ollama) con imagen en base64
+- [x] `base_datos.py`: registro en SQLite con razonamiento de Gemma
+- [x] `notificador.py`: guarda frame, registra en BD, envía Telegram y TTS
+- [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
+- **Pruebas de integración**: arrancar `python principal.py` y verificar que el pipeline completo funciona con el stream real
 - Verificar que `ver_detecciones.py` muestra el stream con detecciones (posible bloqueo temporal de YouTube por IP — el código es correcto)
-- Continuar con `rastreador.py`
+- Fase 2: recopilar frames para el dataset de fine-tuning
