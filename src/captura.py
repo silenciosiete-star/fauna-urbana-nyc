@@ -37,7 +37,7 @@ class CapturadorStream:
         opciones = {
             "format": "best[ext=mp4]/bestvideo[ext=mp4]/best",
             "quiet": True,
-            "extractor_args": {"youtube": {"js_runtimes": ["node"]}},
+            "js_runtimes": ["node"],
         }
         with yt_dlp.YoutubeDL(opciones) as ydl:
             info = ydl.extract_info(self.url, download=False)
