@@ -48,6 +48,9 @@ config/local_*.yaml
 .DS_Store
 Thumbs.db
 
+# Documentación del profesor (local)
+*.pdf
+
 # Logs
 logs/
 *.log
