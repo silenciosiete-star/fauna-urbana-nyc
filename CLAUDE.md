@@ -142,4 +142,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 
 - [x] Planning y propuesta definidos
 - [x] Repositorio creado en GitHub
-- [ ] Fase 1 en curso
+- [x] Entorno virtual y dependencias instaladas
+- [x] `captura.py`: hilo de lectura del stream con reconexión automática
+- [ ] `detector.py`: inferencia con YOLO genérico
+- [ ] `rastreador.py`, `zonas.py`, `eventos.py`, `base_datos.py`, `notificador.py`, `principal.py`
