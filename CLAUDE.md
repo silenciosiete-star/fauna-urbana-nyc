@@ -144,5 +144,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Repositorio creado en GitHub
 - [x] Entorno virtual y dependencias instaladas
 - [x] `captura.py`: hilo de lectura del stream con reconexión automática
-- [ ] `detector.py`: inferencia con YOLO genérico
+- [x] `detector.py`: inferencia YOLO cada N frames, fallback automático a modelo genérico
 - [ ] `rastreador.py`, `zonas.py`, `eventos.py`, `base_datos.py`, `notificador.py`, `principal.py`
