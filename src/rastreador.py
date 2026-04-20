@@ -23,6 +23,7 @@ class Rastreador:
     def __init__(self, cola_entrada: queue.Queue):
         self.cola_entrada = cola_entrada
         self.cola_salida: queue.Queue = queue.Queue(maxsize=5)
+        self.cola_display: queue.Queue = queue.Queue(maxsize=5)
         self._tracker = sv.ByteTrack()
         self._activo = False
         self._hilo: threading.Thread | None = None
@@ -55,15 +56,15 @@ class Rastreador:
                 f"(IDs: {detecciones_con_id.tracker_id.tolist() if detecciones_con_id.tracker_id is not None else []})"
             )
 
-            if self.cola_salida.full():
-                try:
-                    self.cola_salida.get_nowait()
-                except queue.Empty:
-                    pass
-
-            self.cola_salida.put(
-                ResultadoTracking(
-                    frame=resultado.frame,
-                    detecciones=detecciones_con_id,
-                )
+            resultado_tracking = ResultadoTracking(
+                frame=resultado.frame,
+                detecciones=detecciones_con_id,
             )
+
+            for cola in (self.cola_salida, self.cola_display):
+                if cola.full():
+                    try:
+                        cola.get_nowait()
+                    except queue.Empty:
+                        pass
+                cola.put(resultado_tracking)

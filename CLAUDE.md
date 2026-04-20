@@ -122,7 +122,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `base_datos.py`: registro en SQLite
 - [x] `notificador.py`: notificación Telegram al disparar hito
 - [x] `principal.py`: orquestar todo
-- [ ] `visualizador.py`: ventana en directo con bboxes, IDs de tracking y límites de zona
+- [x] `visualizador.py`: ventana en directo con bboxes, IDs de tracking y límites de zona
 - [x] **Pruebas de integración con stream real** — superadas
 
 ### Fase 2 — Fine-tuning
@@ -158,5 +158,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Visualizador integrado**: implementar `src/visualizador.py` (ventana en directo con bboxes, IDs, zonas) y engancharlo al pipeline en `principal.py`. Antes de implementar, verificar que `ver_detecciones.py` muestra imagen — hay un problema conocido de ventana negra, posiblemente Qt/Wayland; probar con `QT_QPA_PLATFORM=xcb` ya configurado o diagnosticar si persiste.
+- **Pruebas del visualizador**: arrancar `python principal.py` y verificar que la ventana muestra el stream con bboxes, IDs de tracking y límites de zona correctamente
 - Fase 2: recopilar frames para el dataset de fine-tuning

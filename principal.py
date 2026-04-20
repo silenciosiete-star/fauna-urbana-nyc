@@ -1,6 +1,9 @@
 """Punto de entrada. Arranca todos los hilos y los conecta."""
+import os
 import signal
 import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 import yaml
 from dotenv import load_dotenv
@@ -14,6 +17,7 @@ from src.eventos import GestorEventos
 from src.verificador import Verificador
 from src.base_datos import BaseDatos
 from src.notificador import Notificador
+from src.visualizador import Visualizador
 
 load_dotenv()
 
@@ -59,7 +63,12 @@ def main() -> None:
         config_capturas=config["capturas"],
     )
 
-    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador]
+    visualizador = Visualizador(
+        cola_entrada=rastreador.cola_display,
+        zonas=zonas,
+    )
+
+    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador, visualizador]
 
     def apagar(sig, frame):
         logger.info("Señal de parada recibida. Deteniendo módulos...")

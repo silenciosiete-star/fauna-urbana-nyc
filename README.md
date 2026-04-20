@@ -108,7 +108,7 @@ El mínimo presentable y funcional:
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
 - [x] Tracking de trayectorias con Supervision
 - [x] **Pruebas de integración con stream real** — superadas
-- [ ] Visualización en directo del stream con bboxes, IDs de tracking y límites de zona
+- [x] Visualización en directo del stream con bboxes, IDs de tracking y límites de zona
 
 ---
 
