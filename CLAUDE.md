@@ -126,8 +126,12 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] **Pruebas de integración con stream real** — superadas
 
 ### Fase 2 — Fine-tuning
-- [ ] `recopilar_frames.py`: extraer frames del stream
-- [ ] Etiquetado en Roboflow
+- [x] `recopilar_frames.py`: script listo. Ver instrucciones detalladas en README.
+- [ ] **Recolección de datos** ← SIGUIENTE PASO ANTES DE CONTINUAR
+  - Ejecutar 3-4 sesiones de `python entrenamiento/recopilar_frames.py` dentro de la franja 11h-20h hora NYC
+  - Filtrar frames vacíos a mano, objetivo: 400-600 frames con personajes visibles
+  - Verificar que todas las clases tienen ≥80 imágenes (spider-man, gorila, deadpool, mickey, minnie)
+- [ ] Etiquetado en Roboflow (~3-4h, usar auto-label + revisión manual)
 - [ ] `preparar_dataset.py`: preparar dataset en formato YOLO
 - [ ] `entrenar.py`: fine-tuning y evaluación (mAP por clase)
 - [ ] Sustituir modelo genérico por el fine-tuned en `detector.py`
@@ -158,5 +162,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Pruebas del visualizador**: arrancar `python principal.py` y verificar que la ventana muestra el stream con bboxes, IDs de tracking y límites de zona correctamente
-- Fase 2: recopilar frames para el dataset de fine-tuning
+- **Recolección de datos (Fase 2)**: ejecutar sesiones de `recopilar_frames.py` en franja 11h-20h NYC, filtrar vacíos, llegar a 400-600 frames útiles. Ver README para instrucciones completas.
+- Una vez con el dataset listo: etiquetar en Roboflow y continuar con `preparar_dataset.py` y `entrenar.py`.

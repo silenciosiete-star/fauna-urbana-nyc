@@ -72,13 +72,29 @@ Clases objetivo: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie` 
 
 ### Paso 1 — Recopilar frames (`entrenamiento/recopilar_frames.py`)
 
-Extraer capturas del stream en distintos horarios (mañana, tarde, noche) para cubrir variedad de iluminación y distancias. Complementar con imágenes de personajes de otras fuentes (eventos, convenciones) si el stream no da suficientes muestras.
+**Cuándo capturar:** los personajes están en la plaza de **11h a 20h hora de Nueva York** (UTC-4 en verano, UTC-5 en invierno). Fuera de esa franja la plaza está vacía — no tiene sentido capturar.
+
+**Sesiones recomendadas:** 3-4 sesiones en distintos días y horas para cubrir variedad de iluminación:
+
+```bash
+# Sesión tipo: ~240 frames en ~2 horas reales de stream
+python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames
+
+# Si quieres una carpeta por sesión para organizarte mejor:
+python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames_manana
+python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames_tarde
+```
+
+**Después de cada sesión:** revisar la carpeta y borrar los frames sin personajes visibles antes de subir a Roboflow. El objetivo es llegar a **400-600 frames útiles** en total (con al menos un personaje visible).
+
+> **Desequilibrio de clases:** spider-man aparece con mucha más frecuencia que el gorila o deadpool. Si al revisar los frames ves que alguna clase tiene menos de ~80 imágenes, haz una sesión extra buscando activamente esos momentos o complementa con imágenes externas (convenciones, eventos).
 
 ### Paso 2 — Etiquetar con Roboflow
 
-- Personajes: anotar bounding boxes a mano. Roboflow tiene auto-etiquetado que acelera el proceso.
-- Vehículos: importar directamente desde COCO en Roboflow, ya vienen anotados.
-- Mezclar ambos en un único proyecto de Roboflow.
+- Crear un proyecto en [Roboflow](https://roboflow.com) con las 5 clases: `gorila`, `spider-man`, `deadpool`, `mickey`, `minnie`.
+- Subir los frames filtrados y etiquetar bounding boxes. Usar el **auto-label** de Roboflow para acelerar — revisa y corrige, no te fíes al 100%.
+- Vehículos: importar directamente desde COCO en Roboflow, ya vienen anotados. Mezclar en el mismo proyecto.
+- Ritmo orientativo: ~150-200 imágenes/hora. Con 500 frames útiles, ~3-4 horas de etiquetado.
 
 ### Paso 3 — Preparar el dataset (`entrenamiento/preparar_dataset.py`)
 
