@@ -12,10 +12,9 @@ from .zonas import Zona
 
 _ANCHO_DISPLAY = 960
 _COLORES_ZONA = {
-    "trafico": (255, 140, 0),
     "fauna": (0, 200, 0),
     "esquina_norte": (0, 200, 220),
-    "zona_foto": (200, 0, 200),
+    "esquina_sur": (200, 0, 200),
 }
 _COLOR_ZONA_DEFAULT = (180, 180, 180)
 
@@ -46,17 +45,23 @@ class Visualizador:
     # ------------------------------------------------------------------
 
     def _bucle_display(self) -> None:
+        ultimo_display: np.ndarray | None = None
+        dimensiones_logueadas = False
         while self._activo:
             try:
-                resultado: ResultadoTracking = self.cola_entrada.get(timeout=1)
+                resultado: ResultadoTracking = self.cola_entrada.get(timeout=0.05)
+                if not dimensiones_logueadas:
+                    h, w = resultado.frame.shape[:2]
+                    logger.info(f"Tamaño del frame: {w}×{h} px — ajusta config.yaml si las zonas no coinciden")
+                    dimensiones_logueadas = True
+                frame = self._anotar(resultado)
+                alto = int(frame.shape[0] * _ANCHO_DISPLAY / frame.shape[1])
+                ultimo_display = cv2.resize(frame, (_ANCHO_DISPLAY, alto))
             except queue.Empty:
-                continue
+                pass
 
-            frame = self._anotar(resultado)
-            alto = int(frame.shape[0] * _ANCHO_DISPLAY / frame.shape[1])
-            frame_display = cv2.resize(frame, (_ANCHO_DISPLAY, alto))
-
-            cv2.imshow("Fauna Urbana NYC", frame_display)
+            if ultimo_display is not None:
+                cv2.imshow("Fauna Urbana NYC", ultimo_display)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 self._activo = False
                 break

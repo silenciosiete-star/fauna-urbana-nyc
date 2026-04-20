@@ -19,7 +19,7 @@ def obtener_url_directa(url: str) -> str:
     opciones = {
         "format": "best[ext=mp4]/best",
         "quiet": True,
-        "js_runtimes": ["node"],
+        "js_runtimes": {"node": {}},
     }
     with yt_dlp.YoutubeDL(opciones) as ydl:
         info = ydl.extract_info(url, download=False)

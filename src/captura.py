@@ -37,7 +37,7 @@ class CapturadorStream:
         opciones = {
             "format": "best[ext=mp4]/bestvideo[ext=mp4]/best",
             "quiet": True,
-            "js_runtimes": ["node"],
+            "js_runtimes": {"node": {}},
         }
         with yt_dlp.YoutubeDL(opciones) as ydl:
             info = ydl.extract_info(self.url, download=False)
@@ -55,6 +55,9 @@ class CapturadorStream:
 
                 logger.info("Stream abierto. Capturando frames...")
 
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30
+                intervalo = 1.0 / fps
+
                 while self._activo:
                     ok, frame = cap.read()
                     if not ok:
@@ -70,6 +73,7 @@ class CapturadorStream:
                             pass
 
                     self.cola.put(frame)
+                    time.sleep(intervalo)
 
                 cap.release()
 
