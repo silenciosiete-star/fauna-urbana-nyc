@@ -29,10 +29,14 @@ class Notificador:
         self._guardar_frame = config_capturas.get("guardar_en_hito", True)
         self._activo = False
         self._hilo: threading.Thread | None = None
+        self._bot = None
 
     def iniciar(self) -> None:
         self._activo = True
         self._carpeta_capturas.mkdir(parents=True, exist_ok=True)
+        if self._cfg_notif.get("telegram", {}).get("activo", False):
+            from telegram import Bot
+            self._bot = Bot(token=os.getenv("TELEGRAM_TOKEN", ""))
         self._hilo = threading.Thread(target=self._bucle_notificaciones, daemon=True)
         self._hilo.start()
         logger.info("Notificador iniciado")
@@ -79,11 +83,8 @@ class Notificador:
 
     def _enviar_telegram(self, hito: HitoVerificado) -> None:
         try:
-            from telegram import Bot
-            token = os.getenv("TELEGRAM_TOKEN", "")
             chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-            bot = Bot(token=token)
-            asyncio.run(bot.send_message(chat_id=chat_id, text=hito.mensaje))
+            asyncio.run(self._bot.send_message(chat_id=chat_id, text=hito.mensaje))
             logger.debug("Mensaje Telegram enviado")
         except Exception as error:
             logger.error(f"Error enviando Telegram: {error}")

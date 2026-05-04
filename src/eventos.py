@@ -72,8 +72,8 @@ class GestorEventos:
                 continue
 
             clases_presentes = _clases_en_detecciones(resultado.detecciones)
-            self._actualizar_avistamientos(clases_presentes, resultado.marca_tiempo)
             self._evaluar_hitos(resultado, clases_presentes)
+            self._actualizar_avistamientos(clases_presentes, resultado.marca_tiempo)
 
     def _evaluar_hitos(self, resultado: ResultadoTracking, clases_presentes: set[str]) -> None:
         cfg = self._config

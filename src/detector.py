@@ -27,10 +27,12 @@ class Detector:
         cola_entrada: queue.Queue,
         ruta_modelo: str,
         frames_por_inferencia: int = 4,
+        confianza_minima: float = 0.5,
     ):
         self.cola_entrada = cola_entrada
         self.cola_salida: queue.Queue = queue.Queue(maxsize=5)
         self.frames_por_inferencia = frames_por_inferencia
+        self._confianza_minima = confianza_minima
         self._modelo = self._cargar_modelo(ruta_modelo)
         self._activo = False
         self._hilo: threading.Thread | None = None
@@ -70,7 +72,7 @@ class Detector:
             if contador % self.frames_por_inferencia != 0:
                 continue
 
-            resultado = self._modelo(frame, verbose=False)[0]
+            resultado = self._modelo(frame, verbose=False, conf=self._confianza_minima)[0]
             detecciones = sv.Detections.from_ultralytics(resultado)
 
             logger.debug(f"Frame {contador}: {len(detecciones)} detecciones")

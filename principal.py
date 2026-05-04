@@ -36,6 +36,7 @@ def main() -> None:
         cola_entrada=capturador.cola,
         ruta_modelo=config["modelo"]["ruta"],
         frames_por_inferencia=config["stream"]["frames_por_inferencia"],
+        confianza_minima=config["modelo"]["confianza_minima"],
     )
 
     rastreador = Rastreador(cola_entrada=detector.cola_salida)
@@ -64,7 +65,8 @@ def main() -> None:
     )
 
     visualizador = Visualizador(
-        cola_entrada=rastreador.cola_display,
+        cola_frames=capturador.cola_display,
+        cola_tracking=rastreador.cola_display,
         zonas=zonas,
     )
 

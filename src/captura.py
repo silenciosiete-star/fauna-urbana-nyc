@@ -16,6 +16,7 @@ class CapturadorStream:
     def __init__(self, url: str):
         self.url = url
         self.cola: queue.Queue = queue.Queue(maxsize=_MAX_FRAMES_COLA)
+        self.cola_display: queue.Queue = queue.Queue(maxsize=_MAX_FRAMES_COLA)
         self._activo = False
         self._hilo: threading.Thread | None = None
 
@@ -64,15 +65,13 @@ class CapturadorStream:
                         logger.warning("Error leyendo frame, reconectando...")
                         break
 
-                    # Descartar el frame más antiguo si la cola está llena
-                    # para no acumular frames obsoletos
-                    if self.cola.full():
-                        try:
-                            self.cola.get_nowait()
-                        except queue.Empty:
-                            pass
-
-                    self.cola.put(frame)
+                    for cola in (self.cola, self.cola_display):
+                        if cola.full():
+                            try:
+                                cola.get_nowait()
+                            except queue.Empty:
+                                pass
+                        cola.put(frame)
                     time.sleep(intervalo)
 
                 cap.release()
