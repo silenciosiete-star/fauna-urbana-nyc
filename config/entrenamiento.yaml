@@ -1,0 +1,33 @@
+# Parámetros de entrenamiento de YOLO26 para Fauna Urbana NYC.
+# Todos los valores son pasados directamente a model.train() de Ultralytics.
+
+# Modelo y rutas
+modelo_base: yolo26s.pt           # Pesos preentrenados — se descargan automáticamente
+datos: datos/preparado/data.yaml  # Generado por preparar_dataset.py
+salida: modelos/
+nombre_experimento: fauna_urbana
+
+# Entrenamiento
+epocas: 100
+paciencia: 20                     # Early stopping si val/mAP50 no mejora en N épocas
+batch: 16                         # 16 GB VRAM (RTX 4080 Super) — subir a 32 si el monitor de GPU aguanta
+imgsz: 1280                       # Imagen grande → mejor detección de objetos pequeños/lejanos
+workers: 4
+
+# Pérdida
+fl_gamma: 1.5                     # Focal loss — penaliza ejemplos fáciles y da más peso
+                                  # a clases raras como deadpool (38 imágenes)
+
+# Augmentación geométrica y de color — aplicada online por YOLO en cada batch
+hsv_h: 0.015                      # Variación de tono (default)
+hsv_s: 0.7                        # Variación de saturación (default)
+hsv_v: 0.5                        # Variación de brillo — aumentado por iluminación variable de Times Square
+degrees: 5.0                      # Rotación leve — personajes pueden estar ligeramente inclinados
+translate: 0.1                    # Traslación (default)
+scale: 0.5                        # Escala (default)
+perspective: 0.0001               # Perspectiva mínima — ángulo de cámara fijo pero no perfecto
+flipud: 0.0                       # Sin flip vertical — personajes siempre en pie
+fliplr: 0.5                       # Flip horizontal — personajes caminan en ambas direcciones
+mosaic: 1.0                       # Crítico para objetos pequeños: combina 4 imágenes en una
+mixup: 0.1                        # MixUp leve — ayuda con el desequilibrio de clases
+copy_paste: 0.1                   # Copia instancias de clases raras en otras imágenes

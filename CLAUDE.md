@@ -20,7 +20,7 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 
 | Decisión | Motivo |
 |----------|--------|
-| YOLO v11 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido. Dataset mixto: personajes (anotados a mano) + vehículos COCO (ya anotados). Un solo modelo cubre ambas zonas. |
+| YOLO26 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido. Dataset mixto: personajes (anotados a mano) + vehículos COCO (ya anotados). Un solo modelo cubre ambas zonas. STAL (Small-Target-Aware Label Assignment) mejora la detección de personajes pequeños/lejanos, que es el caso de la cámara de Times Square. |
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
 | Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
 | Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |
@@ -74,7 +74,7 @@ Si Gemma devuelve `FALSO_POSITIVO`, el hito no se dispara y se registra como des
 | Componente | Tecnología |
 |------------|------------|
 | Captura del stream | OpenCV + yt-dlp |
-| Detección y clasificación | YOLO v11 (ultralytics) |
+| Detección y clasificación | YOLO26 (ultralytics) |
 | Tracking | Supervision + ByteTrack |
 | LLM verificador y narrador | Gemma 4 — HuggingFace (desarrollo) / Ollama local en 192.168.0.135 (producción) |
 | Panel web | Dash + Plotly |
@@ -103,7 +103,7 @@ src/
 entrenamiento/
 ├── recopilar_frames.py  # Extrae frames del stream para construir el dataset.
 ├── preparar_dataset.py  # Convierte etiquetas Roboflow a formato YOLO, hace splits.
-└── entrenar.py          # Fine-tuning de YOLO v11 con el dataset preparado.
+└── entrenar.py          # Fine-tuning de YOLO26 con el dataset preparado.
 
 principal.py         # Arranca los hilos y conecta los módulos.
 config/config.yaml   # Única fuente de verdad para parámetros.
@@ -127,14 +127,17 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 
 ### Fase 2 — Fine-tuning
 - [x] `recopilar_frames.py`: script listo. Ver instrucciones detalladas en README.
-- [ ] **Recolección de datos** ← SIGUIENTE PASO ANTES DE CONTINUAR
-  - Ejecutar 3-4 sesiones de `python entrenamiento/recopilar_frames.py` dentro de la franja 11h-20h hora NYC
-  - Filtrar frames vacíos a mano, objetivo: 400-600 frames con personajes visibles
-  - Verificar que todas las clases tienen ≥80 imágenes (spider-man, gorila, deadpool, mickey, minnie)
-- [ ] Etiquetado en Roboflow (~3-4h, usar auto-label + revisión manual)
-- [ ] `preparar_dataset.py`: preparar dataset en formato YOLO
-- [ ] `entrenar.py`: fine-tuning y evaluación (mAP por clase)
-- [ ] Sustituir modelo genérico por el fine-tuned en `detector.py`
+- [x] Recolección de datos: 499 imágenes capturadas y etiquetadas en Roboflow
+- [x] Análisis exploratorio y corrección de etiquetas
+- [x] `preparar_dataset.py`: splits estratificados + augmentación meteorológica opcional
+- [x] `entrenar.py`: fine-tuning con `config/entrenamiento.yaml`
+- [ ] **Entrenamiento** ← SIGUIENTE PASO (equipo con RTX 4080 Super)
+  1. `git pull` + `pip install ultralytics albumentations`
+  2. Descargar dataset de Roboflow → `datos/dataset/`
+  3. Ajustar `batch`/`workers` en `config/entrenamiento.yaml` según `nvidia-smi`
+  4. `python entrenamiento/preparar_dataset.py --meteo`
+  5. `python entrenamiento/entrenar.py`
+- [ ] Sustituir modelo genérico por el fine-tuned: actualizar `config/config.yaml` y `gemma.clases`
 
 ### Fase 3 — Extras
 - [ ] Panel web (`panel.py`)
@@ -162,5 +165,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Recolección de datos (Fase 2)**: ejecutar sesiones de `recopilar_frames.py` en franja 11h-20h NYC, filtrar vacíos, llegar a 400-600 frames útiles. Ver README para instrucciones completas.
-- Una vez con el dataset listo: etiquetar en Roboflow y continuar con `preparar_dataset.py` y `entrenar.py`.
+- **Entrenamiento (Fase 2)**: en el equipo con RTX 4080 Super. Ver pasos detallados en la sección Fase 2 de arriba.
+- Tras el entrenamiento: actualizar `modelo.ruta` y `gemma.clases` en `config/config.yaml` con las 11 clases del modelo fine-tuned.

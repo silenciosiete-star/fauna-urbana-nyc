@@ -10,7 +10,7 @@ import yt_dlp
 from ultralytics import YOLO
 
 URL = "https://www.youtube.com/watch?v=rnXIjl_Rzy4"
-RUTA_MODELO = "modelos/yolo11n.pt"
+RUTA_MODELO = "modelos/yolo26n.pt"
 FRAMES_INFERENCIA = 10  # Inferencia cada N frames
 ANCHO_DISPLAY = 960     # Solo para la ventana, no afecta a la inferencia
 

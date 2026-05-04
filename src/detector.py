@@ -10,7 +10,7 @@ import supervision as sv
 from loguru import logger
 from ultralytics import YOLO
 
-_MODELO_GENERICO = "yolo11n.pt"
+_MODELO_GENERICO = "yolo26n.pt"
 
 
 @dataclass

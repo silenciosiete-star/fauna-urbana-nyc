@@ -15,7 +15,7 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 | Componente | Tecnología | Notas |
 |------------|------------|-------|
 | Captura del stream | OpenCV + yt-dlp | Hilo independiente para no bloquear la inferencia |
-| Detección y clasificación | YOLO v11 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
+| Detección y clasificación | YOLO26 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
 | Tracking entre frames | Supervision (ByteTrack) | Interpola posiciones en los frames no analizados |
 | Verificador y narrador | Gemma 4 (Ollama / OpenRouter) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. |
 | Panel web | Dash + Plotly | |
@@ -54,7 +54,7 @@ Si Gemma determina que es un falso positivo, el hito no se dispara y queda regis
 
 ---
 
-## Fine-tuning de YOLO v11
+## Fine-tuning de YOLO26
 
 Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool, y también mantener la detección de vehículos para la zona de tráfico.
 
@@ -104,7 +104,7 @@ python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida da
 
 ### Paso 4 — Entrenar (`entrenamiento/entrenar.py`)
 
-Fine-tuning de YOLO v11 partiendo de los pesos preentrenados de Ultralytics (transfer learning). No se entrena desde cero.
+Fine-tuning de YOLO26 partiendo de los pesos preentrenados de Ultralytics (transfer learning). No se entrena desde cero.
 
 ### Paso 5 — Evaluar y sustituir
 
@@ -174,7 +174,7 @@ fauna-urbana-nyc/
 ├── entrenamiento/
 │   ├── recopilar_frames.py  # Extrae frames del stream para el dataset
 │   ├── preparar_dataset.py  # Conversión y splits train/val/test
-│   └── entrenar.py          # Fine-tuning de YOLO v11
+│   └── entrenar.py          # Fine-tuning de YOLO26
 ├── capturas/                # Frames guardados al dispararse un hito
 └── principal.py             # Punto de entrada
 ```
