@@ -36,9 +36,8 @@ class CapturadorStream:
 
     def _obtener_url_directa(self) -> str:
         opciones = {
-            "format": "best[ext=mp4]/bestvideo[ext=mp4]/best",
+            "format": "best[height>=1080]/best[height>=720]/best",
             "quiet": True,
-            "js_runtimes": {"node": {}},
         }
         with yt_dlp.YoutubeDL(opciones) as ydl:
             info = ydl.extract_info(self.url, download=False)

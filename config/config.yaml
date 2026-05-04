@@ -13,7 +13,8 @@ gemma:
   # Proveedor activo: "huggingface" (desarrollo) o "ollama" (producción red local)
   # Las credenciales y la URL van en .env
   proveedor: "huggingface"
-  modelo_nombre: "google/gemma-3-27b-it"  # Mismo modelo en ambos proveedores
+  modelo_nombre: "google/gemma-3-27b-it"  # HuggingFace Inference API
+  ollama_modelo: "gemma4:latest"          # Nombre del modelo en Ollama local
   timeout_segundos: 15  # Tiempo máximo de espera antes de descartar la verificación
   clases:
     0: "gorila"

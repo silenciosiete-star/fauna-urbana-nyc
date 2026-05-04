@@ -88,6 +88,7 @@ class Verificador:
         else:
             respuesta_raw = self._llamar_huggingface(prompt, frame_b64)
 
+
         return _parsear_respuesta(hito, respuesta_raw)
 
     def _llamar_huggingface(self, prompt: str, frame_b64: str) -> str:
@@ -116,7 +117,7 @@ class Verificador:
 
     def _llamar_ollama(self, prompt: str, frame_b64: str) -> str:
         url_base = os.getenv("OLLAMA_URL", "http://192.168.0.135:11434")
-        modelo = self._config["modelo_nombre"].split("/")[-1]  # "gemma-3-27b-it" sin prefijo HF
+        modelo = self._config.get("ollama_modelo", self._config["modelo_nombre"].split("/")[-1])
 
         payload = {
             "model": modelo,

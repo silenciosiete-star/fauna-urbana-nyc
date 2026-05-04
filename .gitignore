@@ -15,9 +15,9 @@ dist/
 build/
 
 # Modelos entrenados (son grandes, se gestionan aparte)
-modelos/*.pt
-modelos/*.onnx
-modelos/*.weights
+*.pt
+*.onnx
+*.weights
 
 # Datos y datasets
 datos/datasets/
