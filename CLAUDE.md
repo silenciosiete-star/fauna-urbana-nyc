@@ -140,7 +140,8 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [ ] Sustituir modelo genérico por el fine-tuned: actualizar `config/config.yaml` y `gemma.clases`
 
 ### Fase 3 — Extras
-- [ ] Panel web (`panel.py`)
+- [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
+- [ ] **Audio en el panel** ← PENDIENTE: reemplazar MJPEG por `<video>` HTML5 (URL directa vía yt-dlp) + `<canvas>` superpuesto con anotaciones enviadas por WebSocket (Flask-Sock). Patrón estándar de dashboards CCTV profesionales.
 - [ ] Bot de Telegram con comandos interactivos
 - [ ] Descripción de escenas con Gemma 4 en `notificador.py`
 - [ ] Síntesis de voz (TTS)
@@ -167,3 +168,4 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 ### Pendiente al retomar
 - **Entrenamiento (Fase 2)**: en el equipo con RTX 4080 Super. Ver pasos detallados en la sección Fase 2 de arriba.
 - Tras el entrenamiento: actualizar `modelo.ruta` y `gemma.clases` en `config/config.yaml` con las 11 clases del modelo fine-tuned.
+- **Audio en el panel (Fase 3)**: ver tarea pendiente arriba.

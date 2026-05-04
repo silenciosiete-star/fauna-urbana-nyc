@@ -31,10 +31,10 @@ zonas:
     puntos: [[750, 440], [1920, 440], [1920, 1080], [750, 1080]]
   - nombre: "esquina_norte"
     deteccion: ["gorila", "spider-man", "deadpool", "mickey", "minnie"]
-    puntos: [[750, 440], [1920, 440], [1920, 790], [750, 790]]
+    puntos: [[650, 440], [1920, 440], [1920, 790], [650, 790]]
   - nombre: "esquina_sur"
     deteccion: ["gorila", "spider-man", "deadpool", "mickey", "minnie"]
-    puntos: [[750, 790], [1920, 790], [1920, 1080], [750, 1080]]
+    puntos: [[500, 790], [1920, 790], [1920, 1080], [500, 1080]]
 
 hitos:
   frames_consecutivos: 5  # Frames que debe cumplirse la condición para disparar el hito
@@ -67,6 +67,10 @@ hitos:
     personaje_dc: "batman"        # Pendiente de añadir batman al dataset
     zona: null
     cooldown_segundos: 180
+
+panel:
+  activo: true
+  puerto: 8050
 
 notificaciones:
   telegram:

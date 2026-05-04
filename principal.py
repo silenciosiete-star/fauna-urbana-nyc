@@ -17,6 +17,7 @@ from src.eventos import GestorEventos
 from src.verificador import Verificador
 from src.base_datos import BaseDatos
 from src.notificador import Notificador
+from src.panel import Panel
 from src.visualizador import Visualizador
 
 load_dotenv()
@@ -64,13 +65,24 @@ def main() -> None:
         config_capturas=config["capturas"],
     )
 
-    visualizador = Visualizador(
-        cola_frames=capturador.cola_display,
-        cola_tracking=rastreador.cola_display,
-        zonas=zonas,
-    )
+    if config.get("panel", {}).get("activo", False):
+        interfaz = Panel(
+            cola_frames=capturador.cola_display,
+            cola_tracking=rastreador.cola_display,
+            zonas=zonas,
+            base_datos=base_datos,
+            url_stream=config["stream"]["url"],
+            puerto=config["panel"]["puerto"],
+            carpeta_capturas=config["capturas"]["carpeta"],
+        )
+    else:
+        interfaz = Visualizador(
+            cola_frames=capturador.cola_display,
+            cola_tracking=rastreador.cola_display,
+            zonas=zonas,
+        )
 
-    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador, visualizador]
+    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador, interfaz]
 
     def apagar(sig, frame):
         logger.info("Señal de parada recibida. Deteniendo módulos...")
