@@ -56,10 +56,13 @@ def clase_dominante(ruta_label: Path) -> str | None:
     return max(conteo, key=conteo.__getitem__)
 
 
+EXTENSIONES_IMAGEN = {".jpg", ".jpeg", ".png"}
+
+
 def agrupar_por_estrato(ruta_images: Path, ruta_labels: Path) -> dict[str, list[str]]:
     """Agrupa nombres de imagen por su clase dominante."""
     grupos: dict[str, list[str]] = defaultdict(list)
-    for ruta_img in sorted(ruta_images.glob("*.jpg")):
+    for ruta_img in sorted(p for p in ruta_images.iterdir() if p.suffix.lower() in EXTENSIONES_IMAGEN):
         ruta_lbl = ruta_labels / ruta_img.with_suffix(".txt").name
         if not ruta_lbl.exists():
             grupos[ESTRATO_FONDO].append(ruta_img.stem)
@@ -83,19 +86,24 @@ def dividir_estrato(nombres: list[str], rng: random.Random) -> tuple[list[str], 
 def copiar_archivos(nombres: list[str], ruta_src_images: Path, ruta_src_labels: Path,
                     ruta_dst_images: Path, ruta_dst_labels: Path) -> None:
     for nombre in nombres:
-        src_img = ruta_src_images / f"{nombre}.jpg"
+        src_img = next(
+            (ruta_src_images / f"{nombre}{ext}" for ext in (".jpg", ".jpeg", ".png")
+             if (ruta_src_images / f"{nombre}{ext}").exists()),
+            None,
+        )
         src_lbl = ruta_src_labels / f"{nombre}.txt"
-        if src_img.exists():
+        if src_img:
             shutil.copy2(src_img, ruta_dst_images / src_img.name)
         if src_lbl.exists():
             shutil.copy2(src_lbl, ruta_dst_labels / src_lbl.name)
 
 
 def escribir_data_yaml(ruta_destino: Path, nombres_clase: list[str]) -> None:
+    ruta_abs = ruta_destino.resolve()
     contenido = {
-        "train": str(ruta_destino / "train" / "images"),
-        "val":   str(ruta_destino / "valid" / "images"),
-        "test":  str(ruta_destino / "test"  / "images"),
+        "train": str(ruta_abs / "train" / "images"),
+        "val":   str(ruta_abs / "valid" / "images"),
+        "test":  str(ruta_abs / "test"  / "images"),
         "nc":    len(nombres_clase),
         "names": nombres_clase,
     }
@@ -147,7 +155,7 @@ def augmentar_meteorologicamente(
         print("       Instálalo con: pip install albumentations")
         return 0
 
-    imagenes = sorted(ruta_images.glob("*.jpg"))
+    imagenes = sorted(p for p in ruta_images.iterdir() if p.suffix.lower() in EXTENSIONES_IMAGEN)
     # Cuántas copias por imagen: factor=0.5 → aprox. una de cada dos imágenes recibe una copia
     n_copias_total = max(1, round(len(imagenes) * factor))
     seleccionadas = rng.choices(imagenes, k=n_copias_total)

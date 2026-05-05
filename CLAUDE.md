@@ -24,9 +24,10 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
 | Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
 | Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |
+| Dos modelos YOLO en inferencia | `modelos/fauna_urbana.pt` para las 11 clases de personajes. Modelo pretrained COCO para vehículos (zona izquierda). No se mezclan en el mismo fine-tuning: el dataset de personajes es demasiado pequeño para coexistir con COCO sin degradar la detección de personajes. |
 | Captura e inferencia en hilos separados | Evita que un frame lento de YOLO bloquee la lectura del stream |
 | Procesar 1 de cada N frames (configurable) | Supervision/ByteTrack interpola el tracking entre frames no analizados |
-| imgsz pendiente de ajustar en fine-tuning | La cámara es lejana y los personajes son objetos pequeños. Valorar subir imgsz a 1280 o recortar la zona derecha del frame antes de la inferencia. Tradeoff velocidad/precisión. |
+| imgsz=1280 en entrenamiento e inferencia | La cámara es lejana y los personajes son objetos pequeños. Se entrenó con imgsz=1280 en una RTX 4080 Super (batch=8, ~10 GB VRAM). Inferencia a 6.9 ms/imagen. |
 | Hitos con umbral de 5 frames consecutivos | Evita falsos positivos por detecciones puntuales |
 
 ---
@@ -131,13 +132,28 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Análisis exploratorio y corrección de etiquetas
 - [x] `preparar_dataset.py`: splits estratificados + augmentación meteorológica opcional
 - [x] `entrenar.py`: fine-tuning con `config/entrenamiento.yaml`
-- [ ] **Entrenamiento** ← SIGUIENTE PASO (equipo con RTX 4080 Super)
-  1. `git pull` + `pip install ultralytics albumentations`
-  2. Descargar dataset de Roboflow → `datos/dataset/`
-  3. Ajustar `batch`/`workers` en `config/entrenamiento.yaml` según `nvidia-smi`
-  4. `python entrenamiento/preparar_dataset.py --meteo`
-  5. `python entrenamiento/entrenar.py`
-- [ ] Sustituir modelo genérico por el fine-tuned: actualizar `config/config.yaml` y `gemma.clases`
+- [x] **Entrenamiento completado** — RTX 4080 Super, 100 épocas, imgsz=1280, batch=8
+- [x] Modelo fine-tuned en `modelos/fauna_urbana.pt` (excluido de git por `.gitignore`)
+- [x] `config/config.yaml` actualizado con las 11 clases reales del dataset
+
+**Resultados del modelo (set de test, 93 imágenes):**
+
+| Clase | mAP50 | Nota |
+|-------|-------|------|
+| gorila | 0.995 | |
+| transformer | 0.990 | |
+| deadpool | 0.995 | |
+| estatua_libertad | 0.957 | |
+| sonic | 0.911 | |
+| spiderman | 0.910 | |
+| super_mario | 0.900 | |
+| batman | 0.849 | |
+| minnie_mouse | 0.823 | |
+| elmo | 0.765 | |
+| **mickey_mouse** | **0.580** | Recall bajo (0.37) — confusión con minnie. Mejorable añadiendo más imágenes. |
+| **global** | **0.879** | |
+
+- [ ] Prueba en vivo con stream real ← **PENDIENTE** (cámara offline al momento de las pruebas)
 
 ### Fase 3 — Extras
 - [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
@@ -166,6 +182,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Entrenamiento (Fase 2)**: en el equipo con RTX 4080 Super. Ver pasos detallados en la sección Fase 2 de arriba.
-- Tras el entrenamiento: actualizar `modelo.ruta` y `gemma.clases` en `config/config.yaml` con las 11 clases del modelo fine-tuned.
+- **Prueba en vivo (Fase 2)**: conectar el stream cuando la cámara vuelva y verificar detecciones reales.
+- **Dos modelos en `detector.py`**: añadir modelo pretrained COCO para vehículos en paralelo al modelo de personajes. La decisión arquitectónica está tomada (ver tabla de arriba).
+- **mickey_mouse**: si el recall sigue bajo en producción, recolectar más imágenes y reentrenar.
 - **Audio en el panel (Fase 3)**: ver tarea pendiente arriba.

@@ -20,7 +20,9 @@ build/
 *.weights
 
 # Datos y datasets
+datos/dataset/
 datos/datasets/
+datos/preparado/
 datos/*.zip
 datos/*.tar.gz
 
@@ -51,6 +53,14 @@ Thumbs.db
 
 # Documentación del profesor (local)
 *.pdf
+
+# Runs y artefactos de entrenamiento YOLO
+runs/
+modelos/fauna_urbana/
+.ultralytics/
+
+# Metadatos Windows (Zone.Identifier)
+*.Identifier
 
 # Logs
 logs/

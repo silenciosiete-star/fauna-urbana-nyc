@@ -17,23 +17,29 @@ gemma:
   ollama_modelo: "gemma4:latest"          # Nombre del modelo en Ollama local
   timeout_segundos: 15  # Tiempo máximo de espera antes de descartar la verificación
   clases:
-    0: "gorila"
-    1: "spider-man"
-    2: "deadpool"
-    3: "mickey"
-    4: "minnie"
+    0: "batman"
+    1: "deadpool"
+    2: "elmo"
+    3: "estatua_libertad"
+    4: "gorila"
+    5: "mickey_mouse"
+    6: "minnie_mouse"
+    7: "sonic"
+    8: "spiderman"
+    9: "super_mario"
+    10: "transformer"
 
 zonas:
   # Frame 1920×1080. La zona de interés cubre la plaza peatonal de Times Square.
   # esquina_norte y esquina_sur la dividen en mitad superior e inferior.
   - nombre: "fauna"
-    deteccion: ["gorila", "spider-man", "deadpool", "mickey", "minnie"]
+    deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
     puntos: [[750, 440], [1920, 440], [1920, 1080], [750, 1080]]
   - nombre: "esquina_norte"
-    deteccion: ["gorila", "spider-man", "deadpool", "mickey", "minnie"]
+    deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
     puntos: [[650, 440], [1920, 440], [1920, 790], [650, 790]]
   - nombre: "esquina_sur"
-    deteccion: ["gorila", "spider-man", "deadpool", "mickey", "minnie"]
+    deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
     puntos: [[500, 790], [1920, 790], [1920, 1080], [500, 1080]]
 
 hitos:
@@ -63,8 +69,8 @@ hitos:
 
   marvel_vs_dc:
     activo: true
-    personaje_marvel: "spider-man"
-    personaje_dc: "batman"        # Pendiente de añadir batman al dataset
+    personaje_marvel: "spiderman"
+    personaje_dc: "batman"
     zona: null
     cooldown_segundos: 180
 

@@ -10,13 +10,9 @@ nombre_experimento: fauna_urbana
 # Entrenamiento
 epocas: 100
 paciencia: 20                     # Early stopping si val/mAP50 no mejora en N épocas
-batch: 16                         # 16 GB VRAM (RTX 4080 Super) — subir a 32 si el monitor de GPU aguanta
+batch: 8                          # imgsz=1280 necesita ~12 GB a batch=8; subir a 16 si nvidia-smi muestra margen tras arrancar
 imgsz: 1280                       # Imagen grande → mejor detección de objetos pequeños/lejanos
 workers: 4
-
-# Pérdida
-fl_gamma: 1.5                     # Focal loss — penaliza ejemplos fáciles y da más peso
-                                  # a clases raras como deadpool (38 imágenes)
 
 # Augmentación geométrica y de color — aplicada online por YOLO en cada batch
 hsv_h: 0.015                      # Variación de tono (default)

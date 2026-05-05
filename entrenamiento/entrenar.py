@@ -18,7 +18,6 @@ from ultralytics import YOLO
 
 PARAMETROS_TRAIN = {
     "epochs", "patience", "batch", "imgsz", "workers",
-    "fl_gamma",
     "hsv_h", "hsv_s", "hsv_v",
     "degrees", "translate", "scale", "perspective",
     "flipud", "fliplr", "mosaic", "mixup", "copy_paste",
@@ -66,16 +65,17 @@ def main() -> None:
 
     parametros = {k: config[k] for k in PARAMETROS_TRAIN if k in config}
     parametros["epochs"] = config.get("epocas", parametros.pop("epochs", 100))
+    parametros["patience"] = config.get("paciencia", parametros.pop("patience", 50))
 
     resultados = modelo.train(
         data=str(ruta_datos),
-        project=str(ruta_salida),
+        project=str(ruta_salida.resolve()),
         name=nombre_exp,
         **parametros,
     )
 
     # El mejor modelo queda en <salida>/<nombre_exp>/weights/best.pt
-    mejor_pt = ruta_salida / nombre_exp / "weights" / "best.pt"
+    mejor_pt = ruta_salida.resolve() / nombre_exp / "weights" / "best.pt"
     if mejor_pt.exists():
         shutil.copy2(mejor_pt, ruta_destino)
         print(f"\nModelo copiado a: {ruta_destino}")

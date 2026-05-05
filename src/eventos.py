@@ -11,7 +11,7 @@ from loguru import logger
 from .rastreador import ResultadoTracking
 from .zonas import Zona, detecciones_en_zona
 
-_SUPERHEROES = {"spider-man", "deadpool", "batman"}
+_SUPERHEROES = {"spiderman", "deadpool", "batman"}
 
 
 @dataclass
