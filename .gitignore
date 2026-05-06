@@ -14,8 +14,7 @@ __pycache__/
 dist/
 build/
 
-# Modelos entrenados (son grandes, se gestionan aparte)
-*.pt
+# Modelos entrenados — *.pt gestionado con Git LFS
 *.onnx
 *.weights
 

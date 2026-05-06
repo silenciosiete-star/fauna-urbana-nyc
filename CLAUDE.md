@@ -153,7 +153,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 | **mickey_mouse** | **0.580** | Recall bajo (0.37) — confusión con minnie. Mejorable añadiendo más imágenes. |
 | **global** | **0.879** | |
 
-- [ ] Prueba en vivo con stream real ← **PENDIENTE** (cámara offline al momento de las pruebas)
+- [ ] Prueba en vivo con stream real ← **PENDIENTE** (ver nota sobre streams más abajo)
 
 ### Fase 3 — Extras
 - [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
@@ -182,7 +182,9 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
-- **Prueba en vivo (Fase 2)**: conectar el stream cuando la cámara vuelva y verificar detecciones reales.
+
+- **Prueba en vivo (Fase 2)**: el stream principal (`rnXIjl_Rzy4`) tuvo problemas técnicos y dejó de mostrar la plaza. Stream alternativo encontrado: `https://www.youtube.com/watch?v=a9J1OP_x5Rg` ("Times Square: Express View Live") — ángulo diferente, se ven personajes. Usar el que esté operativo cuando se retome.
+- **Nota yt-dlp y YouTube**: si yt-dlp devuelve HTTP 429 ("Sign in to confirm you're not a bot"), YouTube ha bloqueado la IP temporalmente por exceso de peticiones. Solución: esperar 20-30 min, o exportar `cookies.txt` desde Edge/Chrome con la extensión "Get cookies.txt LOCALLY" y pasar `--cookies cookies.txt` / `cookiefile` en las opciones de `yt_dlp.YoutubeDL`.
 - **Dos modelos en `detector.py`**: añadir modelo pretrained COCO para vehículos en paralelo al modelo de personajes. La decisión arquitectónica está tomada (ver tabla de arriba).
 - **mickey_mouse**: si el recall sigue bajo en producción, recolectar más imágenes y reentrenar.
 - **Audio en el panel (Fase 3)**: ver tarea pendiente arriba.
