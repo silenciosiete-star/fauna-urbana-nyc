@@ -2,12 +2,12 @@
 # Este archivo es la única fuente de verdad para todos los parámetros del sistema.
 
 stream:
-  url: "https://www.youtube.com/watch?v=rnXIjl_Rzy4"  # Times Square 4K
+  url: "https://www.youtube.com/watch?v=a9J1OP_x5Rg"  # Times Square Express View (alternativo mientras rnXIjl_Rzy4 está offline)
   frames_por_inferencia: 4  # Analizar 1 de cada N frames con YOLO
 
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
-  confianza_minima: 0.5
+  confianza_minima: 0.20
 
 gemma:
   # Proveedor activo: "huggingface" (desarrollo) o "ollama" (producción red local)

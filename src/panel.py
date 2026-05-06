@@ -5,12 +5,11 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import cv2
 import numpy as np
 import supervision as sv
-from dash import Dash, Input, Output, State, dcc, html
+from dash import Dash, Input, Output, dcc, html
 from flask import Response
 from loguru import logger
 
@@ -49,7 +48,6 @@ class Panel:
         cola_tracking: queue.Queue,
         zonas: dict[str, Zona],
         base_datos: BaseDatos,
-        url_stream: str = "",
         puerto: int = 8050,
         carpeta_capturas: str = "capturas",
     ):
@@ -59,8 +57,6 @@ class Panel:
         self._base_datos = base_datos
         self._puerto = puerto
         self._carpeta_capturas = Path(carpeta_capturas)
-        video_id = parse_qs(urlparse(url_stream).query).get("v", [""])[0]
-        self._url_embed = f"https://www.youtube.com/embed/{video_id}" if video_id else ""
         self._activo = False
         self._pausado = False
         self._hilo_frames: threading.Thread | None = None
@@ -98,10 +94,18 @@ class Panel:
                     self._ultimo_tracking = self._cola_tracking.get_nowait()
                 except queue.Empty:
                     break
+            # Drenar la cola y quedarse solo con el frame más reciente
+            frame: np.ndarray | None = None
             try:
-                frame: np.ndarray = self._cola_frames.get(timeout=0.05)
+                while True:
+                    frame = self._cola_frames.get_nowait()
             except queue.Empty:
-                continue
+                pass
+            if frame is None:
+                try:
+                    frame = self._cola_frames.get(timeout=0.05)
+                except queue.Empty:
+                    continue
             self._tiempos_frame.append(time.monotonic())
             frame_anotado = self._anotar_frame(frame)
             alto = int(frame_anotado.shape[0] * _ANCHO_STREAM / frame_anotado.shape[1])
@@ -169,10 +173,6 @@ class Panel:
                                     className="stream-wrapper",
                                     children=[
                                         html.Img(src="/stream"),
-                                        html.Div(
-                                            className="stream-live-badge",
-                                            children=[html.Div(className="live-badge", children=[html.Div(className="live-dot"), "LIVE"])],
-                                        ),
                                     ],
                                 ),
                                 # Controles
@@ -184,22 +184,6 @@ class Panel:
                                         html.Span(id="msg-captura", className="msg-control"),
                                     ],
                                 ),
-                                # Player de audio
-                                *([html.Div(
-                                    className="audio-wrapper",
-                                    children=[
-                                        html.Div("Audio del stream", className="seccion-titulo", style={"marginBottom": "8px"}),
-                                        html.Iframe(
-                                            src=self._url_embed,
-                                            className="audio-iframe",
-                                            allow="autoplay",
-                                        ),
-                                        html.P(
-                                            "Pulsa ▶ en el player para activar el audio. El vídeo del stream anotado sigue siendo el de arriba.",
-                                            className="audio-nota",
-                                        ),
-                                    ],
-                                )] if self._url_embed else []),
                             ],
                         ),
                         # Columna hitos
@@ -298,6 +282,8 @@ class Panel:
         frame = frame.copy()
 
         for nombre, zona in self._zonas.items():
+            if nombre == "fauna":
+                continue
             color = _COLORES_ZONA.get(nombre, _COLOR_ZONA_DEFAULT)
             pts = zona.poligono.polygon.reshape((-1, 1, 2)).astype(np.int32)
             cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)

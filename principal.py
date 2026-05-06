@@ -71,7 +71,6 @@ def main() -> None:
             cola_tracking=rastreador.cola_display,
             zonas=zonas,
             base_datos=base_datos,
-            url_stream=config["stream"]["url"],
             puerto=config["panel"]["puerto"],
             carpeta_capturas=config["capturas"]["carpeta"],
         )

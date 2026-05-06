@@ -157,7 +157,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 
 ### Fase 3 — Extras
 - [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
-- [ ] **Audio en el panel** ← PENDIENTE: reemplazar MJPEG por `<video>` HTML5 (URL directa vía yt-dlp) + `<canvas>` superpuesto con anotaciones enviadas por WebSocket (Flask-Sock). Patrón estándar de dashboards CCTV profesionales.
+- [ ] **Audio en el panel** ← PENDIENTE: el iframe de YouTube con audio ha sido eliminado. La solución correcta es integrar el audio directamente en el stream anotado: reemplazar MJPEG por `<video>` HTML5 (URL directa vía yt-dlp) + `<canvas>` superpuesto con anotaciones enviadas por WebSocket (Flask-Sock). Patrón estándar de dashboards CCTV profesionales.
 - [ ] Bot de Telegram con comandos interactivos
 - [ ] Descripción de escenas con Gemma 4 en `notificador.py`
 - [ ] Síntesis de voz (TTS)

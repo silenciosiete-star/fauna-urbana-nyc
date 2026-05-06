@@ -7,6 +7,8 @@ import cv2
 import yt_dlp
 from loguru import logger
 
+_INTERVALO_RECONEXION_HLS_S = 300  # Renovar URL del stream cada 5 min (expira)
+
 _SEGUNDOS_RECONEXION = 5
 _MAX_FRAMES_COLA = 10
 
@@ -54,11 +56,16 @@ class CapturadorStream:
                     raise RuntimeError("No se pudo abrir el stream")
 
                 logger.info("Stream abierto. Capturando frames...")
-
                 fps = cap.get(cv2.CAP_PROP_FPS) or 30
                 intervalo = 1.0 / fps
+                t_renovar = time.monotonic() + _INTERVALO_RECONEXION_HLS_S
 
                 while self._activo:
+                    if time.monotonic() >= t_renovar:
+                        logger.info("Renovando URL del stream HLS...")
+                        break
+
+                    t_inicio = time.monotonic()
                     ok, frame = cap.read()
                     if not ok:
                         logger.warning("Error leyendo frame, reconectando...")
@@ -71,7 +78,11 @@ class CapturadorStream:
                             except queue.Empty:
                                 pass
                         cola.put(frame)
-                    time.sleep(intervalo)
+
+                    # Dormir solo lo que falta para completar el intervalo real-time
+                    pausa = intervalo - (time.monotonic() - t_inicio)
+                    if pausa > 0:
+                        time.sleep(pausa)
 
                 cap.release()
 
