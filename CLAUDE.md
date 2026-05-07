@@ -157,12 +157,16 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 
 ### Fase 3 — Extras
 - [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
-- [ ] **Audio en el panel** ← PENDIENTE: el iframe de YouTube con audio ha sido eliminado. La solución correcta es integrar el audio directamente en el stream anotado: reemplazar MJPEG por `<video>` HTML5 (URL directa vía yt-dlp) + `<canvas>` superpuesto con anotaciones enviadas por WebSocket (Flask-Sock). Patrón estándar de dashboards CCTV profesionales.
-- [ ] Bot de Telegram con comandos interactivos
-- [ ] Descripción de escenas con Gemma 4 en `notificador.py`
+- [x] `simulador.py` — inyecta frames del dataset para simular hitos desde el panel
+- [x] `verificador.py` — Gemma 4 vía Google AI Studio (tool calling), proveedor configurable
+- [x] Email vía Google Apps Script — Gemma llama a `enviar_email` como tool call
+- [x] Panel: drawer lateral de detalle, desplegable Simular mejorado, feedback "verificando..."
+- [ ] **Probar email en producción** ← pendiente confirmar ciclo completo con stream real
+- [ ] **Bot de Telegram con comandos interactivos** ← pendiente
 - [ ] Síntesis de voz (TTS)
 - [ ] Mapa de calor
 - [ ] Docker
+- [ ] **Audio en el panel** ← solución correcta: reemplazar MJPEG por `<video>` HTML5 + `<canvas>` + WebSocket
 
 ---
 
@@ -171,20 +175,23 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Planning y propuesta definidos
 - [x] Repositorio creado en GitHub
 - [x] Entorno virtual y dependencias instaladas
-- [x] `captura.py`: hilo de lectura del stream con reconexión automática
+- [x] `captura.py`: hilo de lectura del stream, cliente android yt-dlp (sin cookies)
 - [x] `detector.py`: inferencia YOLO cada N frames, fallback automático a modelo genérico
 - [x] `rastreador.py`: tracking con Supervision/ByteTrack
 - [x] `zonas.py`: carga zonas desde config, filtra detecciones con PolygonZone
 - [x] `eventos.py`: 5 hitos con umbral de frames consecutivos, cooldown y cola de salida
-- [x] `verificador.py`: llama a Gemma (HuggingFace o Ollama) con imagen en base64
+- [x] `verificador.py`: Gemma 4 (Google AI Studio) con tool calling — confirma hito y envía email
 - [x] `base_datos.py`: registro en SQLite con razonamiento de Gemma
 - [x] `notificador.py`: guarda frame, registra en BD, envía Telegram y TTS
+- [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
+- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
 
-- **Prueba en vivo (Fase 2)**: el stream principal (`rnXIjl_Rzy4`) tuvo problemas técnicos y dejó de mostrar la plaza. Stream alternativo encontrado: `https://www.youtube.com/watch?v=a9J1OP_x5Rg` ("Times Square: Express View Live") — ángulo diferente, se ven personajes. Usar el que esté operativo cuando se retome.
-- **Nota yt-dlp y YouTube**: si yt-dlp devuelve HTTP 429 ("Sign in to confirm you're not a bot"), YouTube ha bloqueado la IP temporalmente por exceso de peticiones. Solución: esperar 20-30 min, o exportar `cookies.txt` desde Edge/Chrome con la extensión "Get cookies.txt LOCALLY" y pasar `--cookies cookies.txt` / `cookiefile` en las opciones de `yt_dlp.YoutubeDL`.
-- **Dos modelos en `detector.py`**: añadir modelo pretrained COCO para vehículos en paralelo al modelo de personajes. La decisión arquitectónica está tomada (ver tabla de arriba).
-- **mickey_mouse**: si el recall sigue bajo en producción, recolectar más imágenes y reentrenar.
-- **Audio en el panel (Fase 3)**: ver tarea pendiente arriba.
+- **Probar email extremo a extremo**: lanzar simulación con stream real activo y verificar que llega el email a `78818937f@cifpzonzamas.es`. GAS URL y API key de Google en `.env`.
+- **Bot de Telegram**: implementar `src/bot_telegram.py` con comandos `/donde`, `/cuantos`, `/captura`, `/estado`. Requiere `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` en `.env`.
+- **Prueba en vivo (Fase 2)**: stream alternativo `https://www.youtube.com/watch?v=a9J1OP_x5Rg`. El principal (`rnXIjl_Rzy4`) puede estar operativo — comprobar al retomar.
+- **Gemma en producción**: cambiar `GEMMA_PROVEEDOR=ollama` en `.env` para usar Gemma 4 local en `192.168.0.135`. Ya configurado en `config.yaml`.
+- **Dos modelos en `detector.py`**: añadir modelo pretrained COCO para vehículos. Decisión arquitectónica tomada.
+- **mickey_mouse**: recall bajo (0.37) — recolectar más imágenes si falla en producción.
