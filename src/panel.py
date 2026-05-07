@@ -1,4 +1,5 @@
 """Panel web: stream MJPEG en directo + historial de hitos."""
+import csv
 import datetime
 import queue
 import threading
@@ -6,10 +7,12 @@ import time
 from collections import deque
 from pathlib import Path
 
+import plotly.graph_objects as go
+
 import cv2
 import numpy as np
 import supervision as sv
-from dash import ALL, Dash, Input, Output, dcc, html
+from dash import ALL, Dash, Input, Output, State, dcc, html
 from flask import Response
 from loguru import logger
 
@@ -19,12 +22,28 @@ from .simulador import Simulador
 from .verificador import Verificador
 from .zonas import Zona
 
+_DIR_ENTRENAMIENTO = Path(__file__).parent.parent / "modelos" / "fauna_urbana"
+
+_MAP50_POR_CLASE = {
+    "deadpool":         0.995,
+    "gorila":           0.995,
+    "transformer":      0.990,
+    "estatua_libertad": 0.957,
+    "sonic":            0.911,
+    "spiderman":        0.910,
+    "super_mario":      0.900,
+    "batman":           0.849,
+    "minnie_mouse":     0.823,
+    "elmo":             0.765,
+    "mickey_mouse":     0.580,
+}
+
 _HITOS_SIMULABLES = [
-    ("avengers_assemble", "Avengers Assemble"),
-    ("marvel_vs_dc",      "Marvel vs DC"),
-    ("hora_punta",        "Hora Punta"),
+    ("crossover",           "Crossover"),
+    ("marvel_vs_dc",        "Marvel vs DC"),
+    ("hora_punta",          "Hora Punta"),
     ("conflicto_identidad", "Conflicto de Identidad"),
-    ("avistamiento_raro", "Avistamiento Raro"),
+    ("avistamiento_raro",   "Avistamiento Raro"),
 ]
 
 _ANCHO_STREAM = 960
@@ -37,7 +56,7 @@ _COLORES_ZONA = {
 }
 _COLOR_ZONA_DEFAULT = (180, 180, 180)
 _COLORES_HITO = {
-    "avengers_assemble": "#ff9800",
+    "crossover":           "#ff9800",
     "conflicto_identidad": "#e040fb",
     "hora_punta":          "#00bcd4",
     "avistamiento_raro":   "#4caf50",
@@ -71,6 +90,7 @@ class Panel:
         self._pausado = False
         self._simulador: Simulador | None = None
         self._verificador: Verificador | None = None
+        self._capturador = None
         self._hilo_frames: threading.Thread | None = None
         self._ultimo_tracking: ResultadoTracking | None = None
         self._ultimo_frame: np.ndarray | None = None
@@ -82,6 +102,7 @@ class Panel:
 
     def conectar_simulador(self, simulador: Simulador) -> None:
         self._simulador = simulador
+        self._capturador = simulador._capturador
 
     def conectar_verificador(self, verificador: Verificador) -> None:
         self._verificador = verificador
@@ -140,7 +161,8 @@ class Panel:
     def _generar_mjpeg(self):
         ultimo_buffer: bytes | None = None
         while True:
-            if not self._pausado:
+            simulando = self._simulador is not None and self._simulador.simulando is not None
+            if not self._pausado or simulando:
                 with self._lock_frame:
                     frame = self._ultimo_frame
                 if frame is not None:
@@ -171,6 +193,11 @@ class Panel:
                 mimetype="multipart/x-mixed-replace; boundary=frame",
             )
 
+        @app.server.route("/modelo-img/<nombre>")
+        def servir_imagen_modelo(nombre):
+            from flask import send_from_directory
+            return send_from_directory(str(_DIR_ENTRENAMIENTO), nombre)
+
         _estilo_drawer_base = {
             "position": "fixed", "top": 0, "width": "380px", "height": "100vh",
             "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
@@ -189,7 +216,8 @@ class Panel:
                     style={"display": "flex", "alignItems": "center", "justifyContent": "space-between", "marginBottom": "20px"},
                     children=[
                         html.Span("Fauna Urbana NYC", className="titulo"),
-                        html.Div(className="live-badge", children=[html.Div(className="live-dot"), "LIVE"]),
+                        html.Div(id="live-badge", className="live-badge",
+                                 children=[html.Div(className="live-dot"), "LIVE"]),
                     ],
                 ),
                 # ── Stats BD ─────────────────────────────────────────
@@ -244,6 +272,7 @@ class Panel:
                                                 ),
                                             ],
                                         ),
+                                        html.Button("📊  Modelo", id="btn-modelo", className="btn-control", n_clicks=0),
                                         html.Span(id="msg-captura", className="msg-control"),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
@@ -267,13 +296,42 @@ class Panel:
                     style={"display": "none", "position": "fixed", "top": 0, "left": 0,
                            "width": "100vw", "height": "100vh", "zIndex": 999},
                 ),
-                # ── Drawer lateral derecho ───────────────────────────
+                # ── Drawer lateral derecho: detalle hito ────────────
                 html.Div(
                     id="cajita-detalle",
                     style={**_estilo_drawer_base, "right": "-400px"},
                     children=[
                         html.Div(id="cajita-detalle-titulo", style={"marginBottom": "16px"}),
                         html.Div(id="cajita-detalle-cuerpo"),
+                    ],
+                ),
+                # ── Backdrop modelo ──────────────────────────────────
+                html.Div(
+                    id="drawer-backdrop-modelo",
+                    n_clicks=0,
+                    style={"display": "none", "position": "fixed", "top": 0, "left": 0,
+                           "width": "100vw", "height": "100vh", "zIndex": 999},
+                ),
+                # ── Drawer lateral derecho: modelo ───────────────────
+                html.Div(
+                    id="cajita-modelo",
+                    style={**_estilo_drawer_base, "right": "-800px", "width": "780px"},
+                    children=[
+                        html.Div(
+                            style={"display": "flex", "justifyContent": "space-between",
+                                   "alignItems": "center", "marginBottom": "4px"},
+                            children=[
+                                html.Div("MODELO — YOLO26s fine-tuned",
+                                         style={"fontFamily": "Rajdhani, sans-serif",
+                                                "fontSize": "1.1em", "fontWeight": "700",
+                                                "color": "#00bcd4"}),
+                                html.Button("✕", id="btn-cerrar-modelo", n_clicks=0,
+                                            style={"background": "none", "border": "none",
+                                                   "color": "#555", "cursor": "pointer",
+                                                   "fontSize": "1.2em", "lineHeight": "1"}),
+                            ],
+                        ),
+                        html.Div(id="cajita-modelo-cuerpo"),
                     ],
                 ),
             ],
@@ -284,6 +342,7 @@ class Panel:
         @app.callback(
             Output("lista-hitos", "children"),
             Output("barra-stats", "children"),
+            Output("live-badge", "children"),
             Input("intervalo", "n_intervals"),
         )
         def actualizar_hitos(_):
@@ -295,6 +354,17 @@ class Panel:
                 _stat_card(str(confirmados), "confirmados", "#00e676"),
                 _stat_card(str(descartados), "descartados", "#ff5252"),
             ]
+            simulando = self._simulador.simulando if self._simulador else None
+            if simulando:
+                badge = [html.Div(className="live-dot",
+                                  style={"background": "#ff9800", "animationDuration": "0.6s"}),
+                         f"SIM · {simulando.replace('_', ' ').upper()}"]
+            elif self._pausado:
+                badge = [html.Div(className="live-dot",
+                                  style={"background": "#607d8b", "animationPlayState": "paused"}),
+                         "PAUSADO"]
+            else:
+                badge = [html.Div(className="live-dot"), "LIVE"]
             elementos = []
             if self._verificador:
                 for p in self._verificador.hitos_en_proceso():
@@ -319,7 +389,7 @@ class Panel:
                         ],
                     ))
             if not hitos and not elementos:
-                return html.P("Sin hitos registrados aún.", style={"color": "#404060", "fontSize": "0.85em"}), barra
+                return html.P("Sin hitos registrados aún.", style={"color": "#404060", "fontSize": "0.85em"}), barra, badge
             for h in hitos[:30]:
                 ts = datetime.datetime.fromtimestamp(h["marca_tiempo"]).strftime("%d/%m %H:%M")
                 color_borde = _COLORES_HITO.get(h["tipo"], _COLOR_HITO_DEFAULT)
@@ -343,7 +413,7 @@ class Panel:
                         html.Div(h["mensaje"] or h["descripcion"], className="hito-mensaje"),
                     ],
                 ))
-            return elementos, barra
+            return elementos, barra, badge
 
         @app.callback(
             Output("btn-pausa", "children"),
@@ -353,6 +423,14 @@ class Panel:
         )
         def toggle_pausa(_):
             self._pausado = not self._pausado
+            if self._capturador:
+                self._capturador.pausado = self._pausado
+            if self._simulador:
+                gestor = self._simulador._gestor
+                gestor.en_pausa = self._pausado
+                if self._pausado:
+                    for t in gestor._consecutivos:
+                        gestor._consecutivos[t] = 0
             if self._pausado:
                 return "▶  Reanudar", "btn-control activo"
             return "⏸  Pausar", "btn-control"
@@ -498,6 +576,36 @@ class Panel:
                 ]
             return {**estilo_base, "right": "0px"}, titulo, cuerpo, backdrop_visible
 
+        _estilo_modelo_base = {
+            "position": "fixed", "top": 0, "width": "780px", "height": "100vh",
+            "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
+            "zIndex": 1000, "padding": "24px 20px",
+            "boxShadow": "-4px 0 20px rgba(0,0,0,0.5)",
+            "transition": "right 0.3s ease", "overflowY": "auto",
+        }
+
+        @app.callback(
+            Output("cajita-modelo", "style"),
+            Output("cajita-modelo-cuerpo", "children"),
+            Output("drawer-backdrop-modelo", "style"),
+            Input("btn-modelo", "n_clicks"),
+            Input("btn-cerrar-modelo", "n_clicks"),
+            Input("drawer-backdrop-modelo", "n_clicks"),
+            State("cajita-modelo", "style"),
+            prevent_initial_call=True,
+        )
+        def toggle_cajita_modelo(n_btn, _cerrar, _backdrop, estilo_actual):
+            from dash import ctx, no_update
+            backdrop_oculto = {"display": "none", "position": "fixed", "top": 0, "left": 0,
+                               "width": "100vw", "height": "100vh", "zIndex": 999}
+            backdrop_visible = {**backdrop_oculto, "display": "block"}
+            abierto = estilo_actual is not None and estilo_actual.get("right") == "0px"
+            if ctx.triggered_id == "btn-modelo" and not abierto:
+                return ({**_estilo_modelo_base, "right": "0px"},
+                        _construir_contenido_modelo(),
+                        backdrop_visible)
+            return {**_estilo_modelo_base, "right": "-800px"}, no_update, backdrop_oculto
+
         return app
 
     # ------------------------------------------------------------------
@@ -586,6 +694,148 @@ class Panel:
 
 
 # ------------------------------------------------------------------
+
+def _cargar_resultados_csv() -> dict[str, list]:
+    ruta = _DIR_ENTRENAMIENTO / "results.csv"
+    if not ruta.exists():
+        return {}
+    datos: dict[str, list] = {}
+    with open(ruta, encoding="utf-8") as f:
+        for fila in csv.DictReader(f):
+            for k, v in fila.items():
+                try:
+                    val: float | None = float(v)
+                except (ValueError, TypeError):
+                    val = None
+                datos.setdefault(k.strip(), []).append(val)
+    return datos
+
+
+def _construir_contenido_modelo() -> list:
+    datos = _cargar_resultados_csv()
+    epocas = datos.get("epoch", [])
+    n_epocas = len(epocas)
+
+    mAP50_final    = (datos.get("metrics/mAP50(B)",    [None])[-1] or 0)
+    mAP5095_final  = (datos.get("metrics/mAP50-95(B)", [None])[-1] or 0)
+    precision_final = (datos.get("metrics/precision(B)", [None])[-1] or 0)
+    recall_final    = (datos.get("metrics/recall(B)",    [None])[-1] or 0)
+
+    _estilo_grafica = dict(
+        paper_bgcolor="#0d0d1a", plot_bgcolor="#13132a",
+        margin=dict(l=42, r=10, t=28, b=28),
+        font=dict(color="#c0c0e0", size=10),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9), orientation="h",
+                    yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor="#1e1e32", zerolinecolor="#1e1e32", title="época"),
+        yaxis=dict(gridcolor="#1e1e32", zerolinecolor="#1e1e32"),
+    )
+
+    fig_metricas = go.Figure()
+    fig_metricas.add_trace(go.Scatter(
+        x=epocas, y=datos.get("metrics/mAP50(B)", []),
+        name="mAP50", line=dict(color="#00e676", width=2)))
+    fig_metricas.add_trace(go.Scatter(
+        x=epocas, y=datos.get("metrics/precision(B)", []),
+        name="Precisión", line=dict(color="#ff9800", width=1.5, dash="dot")))
+    fig_metricas.add_trace(go.Scatter(
+        x=epocas, y=datos.get("metrics/recall(B)", []),
+        name="Recall", line=dict(color="#f44336", width=1.5, dash="dot")))
+    fig_metricas.update_layout(**_estilo_grafica,
+                               title=dict(text="Métricas por época", font=dict(size=11)))
+    fig_metricas.update_yaxes(range=[0, 1.05])
+
+    fig_losses = go.Figure()
+    fig_losses.add_trace(go.Scatter(
+        x=epocas, y=datos.get("train/cls_loss", []),
+        name="cls train", line=dict(color="#00bcd4", width=2)))
+    fig_losses.add_trace(go.Scatter(
+        x=epocas, y=datos.get("val/cls_loss", []),
+        name="cls val", line=dict(color="#e040fb", width=2)))
+    fig_losses.add_trace(go.Scatter(
+        x=epocas, y=datos.get("train/box_loss", []),
+        name="box train", line=dict(color="#00bcd4", width=1.5, dash="dot")))
+    fig_losses.add_trace(go.Scatter(
+        x=epocas, y=datos.get("val/box_loss", []),
+        name="box val", line=dict(color="#e040fb", width=1.5, dash="dot")))
+    fig_losses.update_layout(**_estilo_grafica,
+                             title=dict(text="Pérdidas train vs val", font=dict(size=11)))
+
+    clases_ord = sorted(_MAP50_POR_CLASE.items(), key=lambda x: x[1])
+    nombres_c = [c for c, _ in clases_ord]
+    valores_c = [v for _, v in clases_ord]
+    colores_c = ["#00e676" if v >= 0.9 else "#ff9800" if v >= 0.75 else "#f44336"
+                 for v in valores_c]
+    fig_clases = go.Figure(go.Bar(
+        x=valores_c, y=nombres_c, orientation="h",
+        marker=dict(color=colores_c),
+        text=[f"{v:.3f}" for v in valores_c],
+        textposition="outside",
+        textfont=dict(size=9, color="#c0c0e0"),
+    ))
+    fig_clases.update_layout(**_estilo_grafica,
+                             title=dict(text="mAP50 por clase", font=dict(size=11)),
+                             height=290)
+    fig_clases.update_layout(margin=dict(l=110, r=40, t=28, b=28))
+    fig_clases.update_xaxes(range=[0, 1.08])
+
+    _s_label = {"fontSize": "0.62em", "color": "#666", "textTransform": "uppercase",
+                "letterSpacing": "0.07em", "marginBottom": "2px"}
+    _s_seccion = {"fontSize": "0.68em", "color": "#555", "textTransform": "uppercase",
+                  "letterSpacing": "0.08em", "marginBottom": "8px"}
+
+    return [
+        html.Hr(style={"borderColor": "#2a2a3e", "margin": "0 0 12px 0"}),
+        html.Div(
+            style={"display": "flex", "gap": "14px", "flexWrap": "wrap",
+                   "fontSize": "0.72em", "color": "#666", "marginBottom": "14px"},
+            children=[
+                html.Span(f"yolo26s · {n_epocas}/100 épocas"),
+                html.Span("imgsz 1280 · batch 8"),
+                html.Span("11 clases · 499 imágenes"),
+            ],
+        ),
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr 1fr",
+                   "gap": "8px", "marginBottom": "20px"},
+            children=[
+                _mini_card("mAP50",    f"{mAP50_final:.3f}",    "#00e676"),
+                _mini_card("mAP50-95", f"{mAP5095_final:.3f}",  "#00bcd4"),
+                _mini_card("Precisión", f"{precision_final:.3f}", "#ff9800"),
+                _mini_card("Recall",   f"{recall_final:.3f}",   "#f44336"),
+            ],
+        ),
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px",
+                   "marginBottom": "14px"},
+            children=[
+                dcc.Graph(figure=fig_metricas, config={"displayModeBar": False},
+                          style={"height": "240px"}),
+                dcc.Graph(figure=fig_losses, config={"displayModeBar": False},
+                          style={"height": "240px"}),
+            ],
+        ),
+        dcc.Graph(figure=fig_clases, config={"displayModeBar": False},
+                  style={"height": "300px", "marginBottom": "16px"}),
+        html.Div("Matriz de confusión normalizada", style=_s_seccion),
+        html.Img(src="/modelo-img/confusion_matrix_normalized.png",
+                 style={"width": "100%", "borderRadius": "4px",
+                        "border": "1px solid #2a2a3e"}),
+    ]
+
+
+def _mini_card(etiqueta: str, valor: str, color: str) -> html.Div:
+    return html.Div(
+        style={"background": "#13132a", "borderRadius": "6px",
+               "padding": "8px 4px", "textAlign": "center"},
+        children=[
+            html.Div(etiqueta, style={"fontSize": "0.62em", "color": "#666",
+                                      "textTransform": "uppercase", "letterSpacing": "0.07em"}),
+            html.Div(valor, style={"fontSize": "1.1em", "fontFamily": "Rajdhani, sans-serif",
+                                   "fontWeight": "700", "color": color}),
+        ],
+    )
+
 
 def _stat_card(numero: str, etiqueta: str, color: str) -> html.Div:
     return html.Div(

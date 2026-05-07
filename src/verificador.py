@@ -36,12 +36,22 @@ _HERRAMIENTA_EMAIL = {
     },
 }
 
-_PROMPT_PLANTILLA = """Eres el vigilante sarcástico de Times Square.
-El sistema ha detectado un posible hito: {descripcion}.
+_CONTEXTO = (
+    "Vigilas una cámara fija de Times Square. El sistema YOLO rastrea personajes disfrazados "
+    "de calle: spiderman, deadpool, batman, mickey_mouse, minnie_mouse, sonic, super_mario, "
+    "elmo, estatua_libertad (persona con disfraz), gorila (traje de gorila), transformer. "
+    "YOLO ya los ha localizado con bounding boxes — tú solo confirmas o descartas visualmente."
+)
 
-Analiza la imagen y razona brevemente si la condición se cumple realmente.
-Si se cumple, llama a la herramienta enviar_email con un asunto conciso y un cuerpo jocoso (máximo 2 frases).
-Si NO se cumple, responde únicamente: FALSO_POSITIVO"""
+_PROMPT_PLANTILLA = (
+    "{contexto}\n\n"
+    "YOLO ha disparado el hito «{tipo}»: {descripcion}.\n"
+    "Objetos que YOLO tiene localizados en este frame: {detecciones_str}.\n"
+    "La imagen muestra el frame anotado con sus bounding boxes.\n\n"
+    "¿Lo confirmas visualmente? Responde directo, sin razonar en voz alta:\n"
+    "• Sí → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
+    "• No → responde exactamente: FALSO_POSITIVO"
+)
 
 
 @dataclass
@@ -131,7 +141,12 @@ class Verificador:
 
     def _verificar_interno(self, hito: HitoPotencial) -> HitoVerificado:
         frame_b64 = _codificar_frame(hito.frame)
-        prompt = _PROMPT_PLANTILLA.format(descripcion=hito.descripcion)
+        prompt = _PROMPT_PLANTILLA.format(
+            contexto=_CONTEXTO,
+            tipo=hito.tipo.replace("_", " "),
+            descripcion=hito.descripcion,
+            detecciones_str=hito.detecciones_str or "desconocidos",
+        )
 
         if self._proveedor == "ollama":
             contenido, llamada = self._llamar_ollama(prompt, frame_b64)
@@ -281,7 +296,8 @@ class Verificador:
         if not url:
             logger.warning("GAS_EMAIL_URL no configurada — email no enviado")
             return
-        respuesta = httpx.post(url, json={"asunto": asunto, "cuerpo": cuerpo}, timeout=10)
+        respuesta = httpx.post(url, json={"asunto": asunto, "cuerpo": cuerpo},
+                               timeout=10, follow_redirects=True)
         respuesta.raise_for_status()
         logger.debug(f"Email enviado: {asunto}")
 

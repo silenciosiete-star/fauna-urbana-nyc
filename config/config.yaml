@@ -46,10 +46,9 @@ zonas:
 hitos:
   frames_consecutivos: 5  # Frames que debe cumplirse la condición para disparar el hito
 
-  avengers_assemble:
+  crossover:
     activo: true
-    superheroes_minimos: 2        # Número mínimo de superhéroes simultáneos
-    zona: null                    # null = cualquier zona del frame
+    universos_minimos: 4          # Universos distintos presentes simultáneamente
     cooldown_segundos: 120        # Tiempo mínimo entre disparos del mismo hito
 
   conflicto_identidad:
@@ -59,7 +58,7 @@ hitos:
 
   hora_punta:
     activo: true
-    personajes_minimos: 5
+    personajes_minimos: 7
     zona: null
     cooldown_segundos: 300
 

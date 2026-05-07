@@ -2,6 +2,7 @@
 import queue
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -11,7 +12,19 @@ from loguru import logger
 from .rastreador import ResultadoTracking
 from .zonas import Zona, detecciones_en_zona
 
-_SUPERHEROES = {"spiderman", "deadpool", "batman"}
+_UNIVERSOS: dict[str, str] = {
+    "spiderman":        "marvel",
+    "deadpool":         "marvel",
+    "batman":           "dc",
+    "mickey_mouse":     "disney",
+    "minnie_mouse":     "disney",
+    "sonic":            "sega",
+    "super_mario":      "nintendo",
+    "elmo":             "sesame",
+    "estatua_libertad": "nyc",
+    "gorila":           "nyc",
+    "transformer":      "nyc",
+}
 
 
 @dataclass
@@ -19,6 +32,7 @@ class HitoPotencial:
     tipo: str
     frame: np.ndarray
     descripcion: str
+    detecciones_str: str = ""  # lista legible de lo que YOLO tiene en ese frame
     marca_tiempo: float = field(default_factory=time.time)
 
 
@@ -49,6 +63,7 @@ class GestorEventos:
 
         self._activo = False
         self._hilo: threading.Thread | None = None
+        self.en_pausa: bool = False
 
     def iniciar(self) -> None:
         self._activo = True
@@ -63,10 +78,28 @@ class GestorEventos:
         logger.info("Gestor de eventos detenido")
 
     def preparar_simulacion(self, tipo: str) -> None:
+        # Pone en cooldown todos los hitos excepto el objetivo para que solo
+        # dispare el que se quiere simular, aunque la imagen contenga más personajes.
+        # Guarda los cooldowns actuales para restaurarlos al terminar.
+        self._cooldowns_guardados = {
+            t: self._ultimo_disparo.get(t) for t in self._consecutivos if t != tipo
+        }
+        cooldown_largo = 9999.0
+        for t in self._consecutivos:
+            if t != tipo:
+                self._ultimo_disparo[t] = time.time() + cooldown_largo
         self._ultimo_disparo.pop(tipo, None)
         self._consecutivos[tipo] = self._umbral - 1
         if tipo == "avistamiento_raro":
             self._ultimo_avistamiento["gorila"] = time.time() - 31 * 60
+
+    def restaurar_cooldowns(self) -> None:
+        for t, v in getattr(self, "_cooldowns_guardados", {}).items():
+            if v is None:
+                self._ultimo_disparo.pop(t, None)
+            else:
+                self._ultimo_disparo[t] = v
+        self._cooldowns_guardados = {}
 
     # ------------------------------------------------------------------
 
@@ -77,6 +110,9 @@ class GestorEventos:
             except queue.Empty:
                 continue
 
+            if self.en_pausa:
+                continue
+
             clases_presentes = _clases_en_detecciones(resultado.detecciones)
             self._evaluar_hitos(resultado, clases_presentes)
             self._actualizar_avistamientos(clases_presentes, resultado.marca_tiempo)
@@ -84,13 +120,14 @@ class GestorEventos:
     def _evaluar_hitos(self, resultado: ResultadoTracking, clases_presentes: set[str]) -> None:
         cfg = self._config
 
+        universos_presentes = {_UNIVERSOS[c] for c in clases_presentes if c in _UNIVERSOS}
         self._evaluar(
-            tipo="avengers_assemble",
-            condicion=cfg.get("avengers_assemble", {}).get("activo", False)
-            and len(clases_presentes & _SUPERHEROES) >= cfg["avengers_assemble"]["superheroes_minimos"],
+            tipo="crossover",
+            condicion=cfg.get("crossover", {}).get("activo", False)
+            and len(universos_presentes) >= cfg["crossover"]["universos_minimos"],
             resultado=resultado,
-            descripcion=f"{len(clases_presentes & _SUPERHEROES)} superhéroes simultáneos: {clases_presentes & _SUPERHEROES}",
-            cooldown=cfg["avengers_assemble"]["cooldown_segundos"],
+            descripcion=f"{len(universos_presentes)} universos simultáneos: {universos_presentes}",
+            cooldown=cfg["crossover"]["cooldown_segundos"],
         )
 
         self._evaluar(
@@ -112,12 +149,13 @@ class GestorEventos:
             cooldown=cfg["marvel_vs_dc"]["cooldown_segundos"],
         )
 
+        clase_conflicto = self._clase_conflicto_identidad(resultado.detecciones)
         self._evaluar(
             tipo="conflicto_identidad",
             condicion=cfg.get("conflicto_identidad", {}).get("activo", False)
-            and self._hay_conflicto_identidad(resultado.detecciones),
+            and clase_conflicto is not None,
             resultado=resultado,
-            descripcion="Dos personajes del mismo tipo en la misma zona",
+            descripcion=f"{clase_conflicto}×2 en la misma zona" if clase_conflicto else "",
             cooldown=cfg["conflicto_identidad"]["cooldown_segundos"],
         )
 
@@ -158,7 +196,17 @@ class GestorEventos:
         self._consecutivos[tipo] = 0
         self._ultimo_disparo[tipo] = ahora
 
-        hito = HitoPotencial(tipo=tipo, frame=resultado.frame, descripcion=descripcion)
+        nombres_todos = list(resultado.detecciones.data.get("class_name", np.array([])))
+        conteo = Counter(n for n in nombres_todos if n)
+        detecciones_str = ", ".join(
+            f"{c}×{n}" if n > 1 else c for c, n in sorted(conteo.items())
+        ) or "ninguno"
+        hito = HitoPotencial(
+            tipo=tipo,
+            frame=_anotar_frame(resultado.frame, resultado.detecciones),
+            descripcion=descripcion,
+            detecciones_str=detecciones_str,
+        )
         if self.cola_salida.full():
             try:
                 self.cola_salida.get_nowait()
@@ -167,17 +215,18 @@ class GestorEventos:
         self.cola_salida.put(hito)
         logger.info(f"Hito potencial detectado: {tipo} — {descripcion}")
 
-    def _hay_conflicto_identidad(self, detecciones: sv.Detections) -> bool:
+    def _clase_conflicto_identidad(self, detecciones: sv.Detections) -> str | None:
         for zona in self._zonas.values():
             en_zona = detecciones_en_zona(detecciones, zona)
             if len(en_zona) < 2:
                 continue
-            clases = _clases_en_detecciones(en_zona)
-            # Hay conflicto si alguna clase aparece más de una vez en la zona
             nombres = list(en_zona.data.get("class_name", []))
-            if len(nombres) != len(set(nombres)):
-                return True
-        return False
+            visto: set[str] = set()
+            for nombre in nombres:
+                if nombre in visto:
+                    return nombre
+                visto.add(nombre)
+        return None
 
     def _actualizar_avistamientos(self, clases_presentes: set[str], marca_tiempo: float) -> None:
         for clase in clases_presentes:
@@ -197,11 +246,22 @@ class GestorEventos:
 # ------------------------------------------------------------------
 # Utilidades de módulo
 
+def _anotar_frame(frame: np.ndarray, detecciones: sv.Detections) -> np.ndarray:
+    if detecciones is None or len(detecciones) == 0:
+        return frame
+    frame = frame.copy()
+    nombres = detecciones.data.get("class_name", np.array([]))
+    etiquetas = [f"{nombres[i]} {detecciones.confidence[i]:.0%}" for i in range(len(detecciones))]
+    frame = sv.BoxAnnotator().annotate(scene=frame, detections=detecciones)
+    frame = sv.LabelAnnotator().annotate(scene=frame, detections=detecciones, labels=etiquetas)
+    return frame
+
+
 def _clases_en_detecciones(detecciones: sv.Detections) -> set[str]:
     nombres = detecciones.data.get("class_name", np.array([]))
     return set(nombres.tolist())
 
 
 def _tipos_activos(config_hitos: dict) -> list[str]:
-    tipos = ["avengers_assemble", "conflicto_identidad", "hora_punta", "avistamiento_raro", "marvel_vs_dc"]
+    tipos = ["crossover", "conflicto_identidad", "hora_punta", "avistamiento_raro", "marvel_vs_dc"]
     return [t for t in tipos if config_hitos.get(t, {}).get("activo", False)]

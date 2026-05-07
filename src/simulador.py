@@ -40,6 +40,7 @@ class Simulador:
         if frame is None:
             return
 
+        pausado_antes = self._capturador.pausado
         self._gestor.preparar_simulacion(tipo)
         self._capturador.pausado = True
 
@@ -65,7 +66,8 @@ class Simulador:
 
             time.sleep(_INTERVALO_INYECCION_S)
 
-        self._capturador.pausado = False
+        self._gestor.restaurar_cooldowns()
+        self._capturador.pausado = pausado_antes
 
         with self._lock:
             self.simulando = None
