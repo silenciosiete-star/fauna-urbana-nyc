@@ -12,10 +12,11 @@ modelo:
 gemma:
   # Proveedor activo: "huggingface" (desarrollo) o "ollama" (producción red local)
   # Las credenciales y la URL van en .env
-  proveedor: "huggingface"
-  modelo_nombre: "google/gemma-3-27b-it"  # HuggingFace Inference API
+  proveedor: "google"
+  modelo_nombre: "google/gemma-4-4B-it"        # HuggingFace Inference API
+  gemini_modelo: "models/gemma-4-26b-a4b-it"  # Google AI Studio
   ollama_modelo: "gemma4:latest"          # Nombre del modelo en Ollama local
-  timeout_segundos: 15  # Tiempo máximo de espera antes de descartar la verificación
+  timeout_segundos: 40  # Tiempo máximo de espera antes de descartar la verificación
   clases:
     0: "batman"
     1: "deadpool"
@@ -47,7 +48,7 @@ hitos:
 
   avengers_assemble:
     activo: true
-    superheroes_minimos: 3        # Número mínimo de superhéroes simultáneos
+    superheroes_minimos: 2        # Número mínimo de superhéroes simultáneos
     zona: null                    # null = cualquier zona del frame
     cooldown_segundos: 120        # Tiempo mínimo entre disparos del mismo hito
 
@@ -79,6 +80,10 @@ panel:
   puerto: 8050
 
 notificaciones:
+  email:
+    activo: true
+    # GAS_EMAIL_URL va en .env
+
   telegram:
     activo: false                 # Activar cuando se configure el bot
     # Las credenciales van en .env, no aquí. Ver .env.example

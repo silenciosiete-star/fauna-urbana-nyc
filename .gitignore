@@ -64,3 +64,4 @@ modelos/fauna_urbana/
 # Logs
 logs/
 *.log
+cookies.txt

@@ -1,5 +1,6 @@
-"""Verifica hitos con Gemma: confirma la condición y genera el mensaje jocoso."""
+"""Verifica hitos con Gemma: confirma la condición, genera el mensaje y envía email si procede."""
 import base64
+import json
 import os
 import queue
 import threading
@@ -13,14 +14,34 @@ from loguru import logger
 
 from .eventos import HitoPotencial
 
-_FALSO_POSITIVO = "FALSO_POSITIVO"
+_HERRAMIENTA_EMAIL = {
+    "type": "function",
+    "function": {
+        "name": "enviar_email",
+        "description": "Envía un email de alerta cuando el hito es genuino y merece notificación.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "asunto": {
+                    "type": "string",
+                    "description": "Asunto conciso del email (sin emojis)",
+                },
+                "cuerpo": {
+                    "type": "string",
+                    "description": "Cuerpo del email: máximo 2 frases con tono jocoso describiendo el hito",
+                },
+            },
+            "required": ["asunto", "cuerpo"],
+        },
+    },
+}
 
 _PROMPT_PLANTILLA = """Eres el vigilante sarcástico de Times Square.
 El sistema ha detectado un posible hito: {descripcion}.
 
-1. ¿Se cumple realmente la condición en la imagen? Razona brevemente.
-2. Si se cumple, escribe un mensaje de alerta divertido describiendo lo que está pasando (máximo 2 frases, tono jocoso).
-   Si NO se cumple, responde únicamente: FALSO_POSITIVO"""
+Analiza la imagen y razona brevemente si la condición se cumple realmente.
+Si se cumple, llama a la herramienta enviar_email con un asunto conciso y un cuerpo jocoso (máximo 2 frases).
+Si NO se cumple, responde únicamente: FALSO_POSITIVO"""
 
 
 @dataclass
@@ -36,14 +57,26 @@ class HitoVerificado:
 
 class Verificador:
 
-    def __init__(self, cola_entrada: queue.Queue, config_gemma: dict):
+    def __init__(
+        self,
+        cola_entrada: queue.Queue,
+        config_gemma: dict,
+        config_notificaciones: dict,
+    ):
         self.cola_entrada = cola_entrada
         self.cola_salida: queue.Queue = queue.Queue(maxsize=10)
         self._config = config_gemma
         self._proveedor = os.getenv("GEMMA_PROVEEDOR", config_gemma.get("proveedor", "huggingface"))
         self._timeout = config_gemma.get("timeout_segundos", 15)
+        self._email_activo = config_notificaciones.get("email", {}).get("activo", False)
         self._activo = False
         self._hilo: threading.Thread | None = None
+        self._en_proceso: list[dict] = []
+        self._lock_proceso = threading.Lock()
+
+    def hitos_en_proceso(self) -> list[dict]:
+        with self._lock_proceso:
+            return list(self._en_proceso)
 
     def iniciar(self) -> None:
         self._activo = True
@@ -70,7 +103,14 @@ class Verificador:
                 verificado = self._verificar(hito)
             except Exception as error:
                 logger.error(f"Error verificando hito '{hito.tipo}': {error}")
-                continue
+                verificado = HitoVerificado(
+                    tipo=hito.tipo,
+                    frame=hito.frame,
+                    descripcion=hito.descripcion,
+                    confirmado=False,
+                    razonamiento=f"Error de verificación: {error}",
+                    mensaje=None,
+                )
 
             if self.cola_salida.full():
                 try:
@@ -80,21 +120,55 @@ class Verificador:
             self.cola_salida.put(verificado)
 
     def _verificar(self, hito: HitoPotencial) -> HitoVerificado:
+        entrada = {"tipo": hito.tipo, "descripcion": hito.descripcion}
+        with self._lock_proceso:
+            self._en_proceso.append(entrada)
+        try:
+            return self._verificar_interno(hito)
+        finally:
+            with self._lock_proceso:
+                self._en_proceso = [h for h in self._en_proceso if h is not entrada]
+
+    def _verificar_interno(self, hito: HitoPotencial) -> HitoVerificado:
         frame_b64 = _codificar_frame(hito.frame)
         prompt = _PROMPT_PLANTILLA.format(descripcion=hito.descripcion)
 
         if self._proveedor == "ollama":
-            respuesta_raw = self._llamar_ollama(prompt, frame_b64)
+            contenido, llamada = self._llamar_ollama(prompt, frame_b64)
+        elif self._proveedor == "google":
+            contenido, llamada = self._llamar_google(prompt, frame_b64)
         else:
-            respuesta_raw = self._llamar_huggingface(prompt, frame_b64)
+            contenido, llamada = self._llamar_huggingface(prompt, frame_b64)
 
+        if llamada and llamada["nombre"] == "enviar_email":
+            args = llamada["argumentos"]
+            if self._email_activo:
+                self._enviar_email(args["asunto"], args["cuerpo"])
+            logger.info(f"Hito '{hito.tipo}' → CONFIRMADO")
+            logger.debug(f"Mensaje Gemma: {args['cuerpo']}")
+            return HitoVerificado(
+                tipo=hito.tipo,
+                frame=hito.frame,
+                descripcion=hito.descripcion,
+                confirmado=True,
+                razonamiento=contenido or "Hito confirmado por Gemma.",
+                mensaje=args["cuerpo"],
+            )
 
-        return _parsear_respuesta(hito, respuesta_raw)
+        logger.info(f"Hito '{hito.tipo}' → FALSO POSITIVO")
+        return HitoVerificado(
+            tipo=hito.tipo,
+            frame=hito.frame,
+            descripcion=hito.descripcion,
+            confirmado=False,
+            razonamiento=contenido or "FALSO_POSITIVO",
+            mensaje=None,
+        )
 
-    def _llamar_huggingface(self, prompt: str, frame_b64: str) -> str:
+    def _llamar_huggingface(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
         token = os.getenv("HUGGINGFACE_TOKEN", "")
         modelo = self._config["modelo_nombre"]
-        url = f"https://api-inference.huggingface.co/models/{modelo}/v1/chat/completions"
+        url = "https://api-inference.huggingface.co/v1/chat/completions"
 
         payload = {
             "model": modelo,
@@ -107,15 +181,29 @@ class Verificador:
                     ],
                 }
             ],
+            "tools": [_HERRAMIENTA_EMAIL],
+            "tool_choice": "auto",
             "max_tokens": 300,
         }
         cabeceras = {"Authorization": f"Bearer {token}"}
 
         respuesta = httpx.post(url, json=payload, headers=cabeceras, timeout=self._timeout)
         respuesta.raise_for_status()
-        return respuesta.json()["choices"][0]["message"]["content"]
+        mensaje = respuesta.json()["choices"][0]["message"]
 
-    def _llamar_ollama(self, prompt: str, frame_b64: str) -> str:
+        contenido = mensaje.get("content") or ""
+        llamada = None
+        tool_calls = mensaje.get("tool_calls") or []
+        if tool_calls:
+            tc = tool_calls[0]
+            llamada = {
+                "nombre": tc["function"]["name"],
+                "argumentos": json.loads(tc["function"]["arguments"]),
+            }
+
+        return contenido, llamada
+
+    def _llamar_ollama(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
         url_base = os.getenv("OLLAMA_URL", "http://192.168.0.135:11434")
         modelo = self._config.get("ollama_modelo", self._config["modelo_nombre"].split("/")[-1])
 
@@ -128,47 +216,83 @@ class Verificador:
                     "images": [frame_b64],
                 }
             ],
+            "tools": [_HERRAMIENTA_EMAIL],
             "stream": False,
         }
 
-        respuesta = httpx.post(
-            f"{url_base}/api/chat", json=payload, timeout=self._timeout
-        )
+        respuesta = httpx.post(f"{url_base}/api/chat", json=payload, timeout=self._timeout)
         respuesta.raise_for_status()
-        return respuesta.json()["message"]["content"]
+        mensaje = respuesta.json()["message"]
+
+        contenido = mensaje.get("content") or ""
+        llamada = None
+        tool_calls = mensaje.get("tool_calls") or []
+        if tool_calls:
+            tc = tool_calls[0]
+            # Ollama devuelve argumentos ya como dict, no como string JSON
+            args = tc["function"]["arguments"]
+            llamada = {
+                "nombre": tc["function"]["name"],
+                "argumentos": args if isinstance(args, dict) else json.loads(args),
+            }
+
+        return contenido, llamada
+
+    def _llamar_google(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
+        clave = os.getenv("GEMINI_API_KEY", "")
+        modelo = self._config.get("gemini_modelo", "models/gemma-4-26b-a4b-it")
+        url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+        payload = {
+            "model": modelo,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            "tools": [_HERRAMIENTA_EMAIL],
+            "tool_choice": "auto",
+            "max_tokens": 300,
+        }
+        cabeceras = {"Authorization": f"Bearer {clave}"}
+
+        respuesta = httpx.post(url, json=payload, headers=cabeceras, timeout=self._timeout)
+        respuesta.raise_for_status()
+        mensaje = respuesta.json()["choices"][0]["message"]
+
+        contenido = mensaje.get("content") or ""
+        llamada = None
+        tool_calls = mensaje.get("tool_calls") or []
+        if tool_calls:
+            tc = tool_calls[0]
+            llamada = {
+                "nombre": tc["function"]["name"],
+                "argumentos": json.loads(tc["function"]["arguments"]),
+            }
+
+        return contenido, llamada
+
+    def _enviar_email(self, asunto: str, cuerpo: str) -> None:
+        url = os.getenv("GAS_EMAIL_URL", "")
+        if not url:
+            logger.warning("GAS_EMAIL_URL no configurada — email no enviado")
+            return
+        respuesta = httpx.post(url, json={"asunto": asunto, "cuerpo": cuerpo}, timeout=10)
+        respuesta.raise_for_status()
+        logger.debug(f"Email enviado: {asunto}")
 
 
 # ------------------------------------------------------------------
 # Utilidades de módulo
 
 def _codificar_frame(frame: np.ndarray) -> str:
-    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    alto, ancho = frame.shape[:2]
+    if ancho > 960:
+        factor = 960 / ancho
+        frame = cv2.resize(frame, (960, int(alto * factor)))
+    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
     return base64.b64encode(buffer).decode("utf-8")
-
-
-def _parsear_respuesta(hito: HitoPotencial, respuesta: str) -> HitoVerificado:
-    confirmado = _FALSO_POSITIVO not in respuesta.upper()
-
-    if confirmado:
-        lineas = [l.strip() for l in respuesta.strip().splitlines() if l.strip()]
-        # Separar razonamiento (punto 1) del mensaje jocoso (punto 2)
-        # Gemma suele estructurarlo con numeración; tomamos la última línea como mensaje
-        razonamiento = " ".join(lineas[:-1]) if len(lineas) > 1 else lineas[0]
-        mensaje = lineas[-1] if len(lineas) > 1 else lineas[0]
-    else:
-        razonamiento = _FALSO_POSITIVO
-        mensaje = None
-
-    estado = "CONFIRMADO" if confirmado else "FALSO POSITIVO"
-    logger.info(f"Hito '{hito.tipo}' → {estado}")
-    if confirmado:
-        logger.debug(f"Mensaje Gemma: {mensaje}")
-
-    return HitoVerificado(
-        tipo=hito.tipo,
-        frame=hito.frame,
-        descripcion=hito.descripcion,
-        confirmado=confirmado,
-        razonamiento=razonamiento,
-        mensaje=mensaje,
-    )

@@ -62,6 +62,12 @@ class GestorEventos:
             self._hilo.join(timeout=10)
         logger.info("Gestor de eventos detenido")
 
+    def preparar_simulacion(self, tipo: str) -> None:
+        self._ultimo_disparo.pop(tipo, None)
+        self._consecutivos[tipo] = self._umbral - 1
+        if tipo == "avistamiento_raro":
+            self._ultimo_avistamiento["gorila"] = time.time() - 31 * 60
+
     # ------------------------------------------------------------------
 
     def _bucle_eventos(self) -> None:

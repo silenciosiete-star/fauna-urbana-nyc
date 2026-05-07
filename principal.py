@@ -18,6 +18,7 @@ from src.verificador import Verificador
 from src.base_datos import BaseDatos
 from src.notificador import Notificador
 from src.panel import Panel
+from src.simulador import Simulador
 from src.visualizador import Visualizador
 
 load_dotenv()
@@ -54,6 +55,7 @@ def main() -> None:
     verificador = Verificador(
         cola_entrada=gestor_eventos.cola_salida,
         config_gemma=config["gemma"],
+        config_notificaciones=config["notificaciones"],
     )
 
     base_datos = BaseDatos(ruta=config["base_datos"]["ruta"])
@@ -66,6 +68,10 @@ def main() -> None:
     )
 
     if config.get("panel", {}).get("activo", False):
+        simulador = Simulador(
+            capturador=capturador,
+            gestor_eventos=gestor_eventos,
+        )
         interfaz = Panel(
             cola_frames=capturador.cola_display,
             cola_tracking=rastreador.cola_display,
@@ -74,6 +80,8 @@ def main() -> None:
             puerto=config["panel"]["puerto"],
             carpeta_capturas=config["capturas"]["carpeta"],
         )
+        interfaz.conectar_simulador(simulador)
+        interfaz.conectar_verificador(verificador)
     else:
         interfaz = Visualizador(
             cola_frames=capturador.cola_display,

@@ -112,6 +112,44 @@ Medir **mAP por clase** sobre el set de test para personajes y vehículos por se
 
 ---
 
+## Instalación
+
+### Dependencias del sistema
+
+```bash
+# Node.js — necesario para que yt-dlp resuelva el n-challenge de YouTube
+sudo apt-get install -y nodejs
+```
+
+### Entorno Python
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Variables de entorno
+
+Crea un archivo `.env` en la raíz del proyecto:
+
+```
+HUGGINGFACE_TOKEN=hf_...       # Token de HuggingFace (verificador en desarrollo)
+GEMMA_PROVEEDOR=huggingface    # o "ollama" para producción local
+```
+
+### Cookies de YouTube (si YouTube bloquea la IP)
+
+Si yt-dlp devuelve `Sign in to confirm you're not a bot`:
+
+1. Instala la extensión **"Get cookies.txt LOCALLY"** en Chrome/Edge
+2. Ve a `youtube.com` con sesión iniciada
+3. Exporta las cookies y guárdalas como `cookies.txt` en la raíz del proyecto
+
+El capturador las detecta automáticamente.
+
+---
+
 ## MVP — Lo que tiene que funcionar
 
 El mínimo presentable y funcional:

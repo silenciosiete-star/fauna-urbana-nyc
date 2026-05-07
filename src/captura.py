@@ -19,6 +19,7 @@ class CapturadorStream:
         self.url = url
         self.cola: queue.Queue = queue.Queue(maxsize=_MAX_FRAMES_COLA)
         self.cola_display: queue.Queue = queue.Queue(maxsize=_MAX_FRAMES_COLA)
+        self.pausado: bool = False
         self._activo = False
         self._hilo: threading.Thread | None = None
 
@@ -40,6 +41,7 @@ class CapturadorStream:
         opciones = {
             "format": "best[height>=1080]/best[height>=720]/best",
             "quiet": True,
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
         }
         with yt_dlp.YoutubeDL(opciones) as ydl:
             info = ydl.extract_info(self.url, download=False)
@@ -71,13 +73,14 @@ class CapturadorStream:
                         logger.warning("Error leyendo frame, reconectando...")
                         break
 
-                    for cola in (self.cola, self.cola_display):
-                        if cola.full():
-                            try:
-                                cola.get_nowait()
-                            except queue.Empty:
-                                pass
-                        cola.put(frame)
+                    if not self.pausado:
+                        for cola in (self.cola, self.cola_display):
+                            if cola.full():
+                                try:
+                                    cola.get_nowait()
+                                except queue.Empty:
+                                    pass
+                            cola.put(frame)
 
                     # Dormir solo lo que falta para completar el intervalo real-time
                     pausa = intervalo - (time.monotonic() - t_inicio)
