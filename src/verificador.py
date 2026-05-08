@@ -57,9 +57,9 @@ _PROMPT_PLANTILLA = (
     "YOLO ha disparado el hito «{tipo}»: {descripcion}.\n"
     "Objetos que YOLO tiene localizados en este frame: {detecciones_str}.\n"
     "La imagen muestra el frame anotado con sus bounding boxes.\n\n"
-    "¿Lo confirmas visualmente? Responde directo, sin razonar en voz alta:\n"
-    "• Sí → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
-    "• No → responde exactamente: FALSO_POSITIVO"
+    "¿Lo confirmas visualmente? Escribe en 1-2 frases qué ves en la imagen y si la condición se cumple. Luego:\n"
+    "• Si la condición se cumple → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
+    "• Si no se cumple → escribe al final: FALSO_POSITIVO"
 )
 
 

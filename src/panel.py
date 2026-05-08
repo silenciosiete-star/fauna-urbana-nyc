@@ -198,6 +198,11 @@ class Panel:
             from flask import send_from_directory
             return send_from_directory(str(_DIR_ENTRENAMIENTO), nombre)
 
+        @app.server.route("/captura-img/<nombre>")
+        def servir_captura(nombre):
+            from flask import send_from_directory
+            return send_from_directory(str(self._carpeta_capturas.resolve()), nombre)
+
         _estilo_drawer_base = {
             "position": "fixed", "top": 0, "width": "380px", "height": "100vh",
             "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
@@ -553,7 +558,8 @@ class Panel:
             if hito is None:
                 return no_update
             return {k: hito[k] for k in ("tipo", "descripcion", "razonamiento", "mensaje",
-                                          "confirmado", "marca_tiempo", "marca_tiempo_deteccion")}
+                                          "confirmado", "marca_tiempo", "marca_tiempo_deteccion",
+                                          "acciones", "ruta_frame")}
 
         @app.callback(
             Output("cajita-detalle", "style"),
@@ -599,8 +605,19 @@ class Panel:
                         "letterSpacing": "0.08em", "marginBottom": "4px"}
             _s_bloque = {"marginBottom": "18px"}
 
+            ruta_frame = data.get("ruta_frame")
+            img_bloque = []
+            if ruta_frame:
+                nombre_archivo = Path(ruta_frame).name
+                img_bloque = [html.Img(
+                    src=f"/captura-img/{nombre_archivo}",
+                    style={"width": "100%", "borderRadius": "6px", "display": "block",
+                           "marginBottom": "16px", "border": f"1px solid {color}44"},
+                )]
+
             cuerpo = [
                 html.Hr(style={"borderColor": "#2a2a3e", "margin": "0 0 16px 0"}),
+                *img_bloque,
 
                 # — Bloque 1: Detección ——————————————————————————
                 html.Div(style=_s_bloque, children=[
@@ -632,15 +649,45 @@ class Panel:
                 ]),
             ]
 
-            # — Bloque 3: Pensamiento de Gemma (solo si hay contenido) ——
+            # — Bloque 3: Pensamiento de Gemma ——————————————————————
             razonamiento = (data.get("razonamiento") or "").strip()
-            if razonamiento and razonamiento not in ("FALSO_POSITIVO",):
+            if razonamiento:
                 cuerpo.append(html.Div(style=_s_bloque, children=[
                     html.Div("Pensamiento de Gemma", style=_s_label),
                     html.Div(razonamiento,
                              style={"fontSize": "0.82em", "color": "#888", "lineHeight": "1.6",
                                     "padding": "8px 10px", "background": "#0a0a18",
                                     "borderRadius": "4px", "borderLeft": "2px solid #2a2a4e"}),
+                ]))
+
+            # — Bloque 4: Acciones disparadas —————————————————————
+            _ETIQUETAS_ACCION = {
+                "email":    ("📧", "Email",    "#ff9800"),
+                "telegram": ("💬", "Telegram", "#29b6f6"),
+                "captura":  ("📸", "Captura",  "#78909c"),
+            }
+            acciones_raw = data.get("acciones") or ""
+            acciones_lista = [a for a in acciones_raw.split(",") if a]
+            if acciones_lista:
+                cuerpo.append(html.Div(style=_s_bloque, children=[
+                    html.Div("Acciones", style=_s_label),
+                    html.Div(
+                        style={"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginTop": "2px"},
+                        children=[
+                            html.Span(
+                                f"{ico} {etq}",
+                                style={
+                                    "fontSize": "0.78em", "padding": "3px 10px",
+                                    "borderRadius": "12px", "color": col,
+                                    "background": f"{col}18",
+                                    "border": f"1px solid {col}44",
+                                    "letterSpacing": "0.03em",
+                                },
+                            )
+                            for a in acciones_lista
+                            for ico, etq, col in [_ETIQUETAS_ACCION.get(a, ("•", a, "#607d8b"))]
+                        ],
+                    ),
                 ]))
 
             return {**estilo_base, "right": "0px"}, titulo, cuerpo, backdrop_visible
@@ -914,3 +961,5 @@ def _stat_card(numero: str, etiqueta: str, color: str) -> html.Div:
             html.Div(numero, className="stat-numero", style={"color": color}),
         ],
     )
+
+

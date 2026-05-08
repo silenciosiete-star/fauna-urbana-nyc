@@ -57,7 +57,17 @@ class Notificador:
                 continue
 
             ruta_frame = self._guardar_captura(hito) if self._guardar_frame else None
-            self._bd.registrar_hito(hito, ruta_frame)
+
+            acciones: list[str] = []
+            if ruta_frame:
+                acciones.append("captura")
+            if hito.confirmado:
+                if self._cfg_notif.get("email", {}).get("activo", False):
+                    acciones.append("email")
+                if self._bot_telegram:
+                    acciones.append("telegram")
+
+            self._bd.registrar_hito(hito, ruta_frame, acciones)
 
             if not hito.confirmado:
                 continue

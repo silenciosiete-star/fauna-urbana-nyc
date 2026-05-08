@@ -30,20 +30,29 @@ class BaseDatos:
         Path(ruta).parent.mkdir(parents=True, exist_ok=True)
         with self._conectar() as con:
             con.execute(_CREAR_TABLA)
-            try:
-                con.execute("ALTER TABLE hitos ADD COLUMN marca_tiempo_deteccion REAL")
-            except Exception:
-                pass  # columna ya existe
+            for columna_sql in (
+                "ALTER TABLE hitos ADD COLUMN marca_tiempo_deteccion REAL",
+                "ALTER TABLE hitos ADD COLUMN acciones TEXT NOT NULL DEFAULT ''",
+            ):
+                try:
+                    con.execute(columna_sql)
+                except Exception:
+                    pass  # columna ya existe
         logger.info(f"Base de datos lista: {ruta}")
 
-    def registrar_hito(self, hito: HitoVerificado, ruta_frame: str | None = None) -> None:
+    def registrar_hito(
+        self,
+        hito: HitoVerificado,
+        ruta_frame: str | None = None,
+        acciones: list[str] | None = None,
+    ) -> None:
         with self._lock:
             with self._conectar() as con:
                 con.execute(
                     """INSERT INTO hitos
                        (marca_tiempo, marca_tiempo_deteccion, tipo, descripcion,
-                        confirmado, razonamiento, mensaje, ruta_frame)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        confirmado, razonamiento, mensaje, ruta_frame, acciones)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         hito.marca_tiempo,
                         hito.marca_tiempo_deteccion,
@@ -53,6 +62,7 @@ class BaseDatos:
                         hito.razonamiento,
                         hito.mensaje,
                         ruta_frame,
+                        ",".join(acciones) if acciones else "",
                     ),
                 )
         logger.debug(f"Hito registrado en BD: {hito.tipo} ({'confirmado' if hito.confirmado else 'falso positivo'})")
