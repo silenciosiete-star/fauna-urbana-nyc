@@ -211,6 +211,7 @@ class Panel:
             children=[
                 dcc.Store(id="hito-seleccionado"),
                 dcc.Store(id="menu-abierto", data=False),
+                dcc.Store(id="menu-posicion", data="abajo"),
                 # ── Header ──────────────────────────────────────────
                 html.Div(
                     style={"display": "flex", "alignItems": "center", "justifyContent": "space-between", "marginBottom": "20px"},
@@ -289,6 +290,13 @@ class Panel:
                         ),
                     ],
                 ),
+                # ── Backdrop menú simular ────────────────────────────
+                html.Div(
+                    id="menu-backdrop",
+                    n_clicks=0,
+                    style={"display": "none", "position": "fixed", "top": 0, "left": 0,
+                           "width": "100vw", "height": "100vh", "zIndex": 199},
+                ),
                 # ── Backdrop (cierra el drawer al hacer click fuera) ──
                 html.Div(
                     id="drawer-backdrop",
@@ -338,6 +346,21 @@ class Panel:
         )
 
         # ── Callbacks ────────────────────────────────────────────────
+
+        app.clientside_callback(
+            """
+            function(n_clicks) {
+                if (!n_clicks) return 'abajo';
+                var btn = document.getElementById('btn-simular-toggle');
+                if (!btn) return 'abajo';
+                var rect = btn.getBoundingClientRect();
+                return (window.innerHeight - rect.bottom) >= 220 ? 'abajo' : 'arriba';
+            }
+            """,
+            Output("menu-posicion", "data"),
+            Input("btn-simular-toggle", "n_clicks"),
+            prevent_initial_call=True,
+        )
 
         @app.callback(
             Output("lista-hitos", "children"),
@@ -455,29 +478,44 @@ class Panel:
             Output("menu-abierto", "data"),
             Input("btn-simular-toggle", "n_clicks"),
             [Input(f"btn-sim-{tipo}", "n_clicks") for tipo, _ in _HITOS_SIMULABLES],
+            Input("menu-backdrop", "n_clicks"),
             prevent_initial_call=True,
         )
-        def actualizar_menu_abierto(_, *n_sims):
+        def actualizar_menu_abierto(n_toggle, *_resto):
             from dash import ctx
             if not ctx.triggered_id:
                 return False
             if ctx.triggered_id == "btn-simular-toggle":
-                return not bool(_ and _ % 2 == 1) if _ is None else _ % 2 == 1
-            # Cualquier botón de simulación cierra el menú
+                return (n_toggle or 0) % 2 == 1
             return False
+
+        @app.callback(
+            Output("menu-backdrop", "style"),
+            Input("menu-abierto", "data"),
+        )
+        def toggle_menu_backdrop(abierto):
+            base = {"position": "fixed", "top": 0, "left": 0,
+                    "width": "100vw", "height": "100vh", "zIndex": 199}
+            return {**base, "display": "block" if abierto else "none"}
 
         @app.callback(
             Output("menu-simular", "style"),
             Input("menu-abierto", "data"),
+            Input("menu-posicion", "data"),
         )
-        def renderizar_menu(abierto):
+        def renderizar_menu(abierto, posicion):
             base = {
-                "position": "absolute", "top": "calc(100% + 6px)", "left": 0,
+                "position": "absolute", "left": 0,
                 "background": "#13132a", "border": "1px solid #2a2a4e",
                 "borderRadius": "8px", "zIndex": 200, "minWidth": "220px",
                 "padding": "6px 0", "boxShadow": "0 8px 24px rgba(0,0,0,0.6)",
+                "display": "block" if abierto else "none",
             }
-            return {**base, "display": "block" if abierto else "none"}
+            if (posicion or "abajo") == "arriba":
+                base["bottom"] = "calc(100% + 6px)"
+            else:
+                base["top"] = "calc(100% + 6px)"
+            return base
 
         @app.callback(
             Output("msg-simular", "children"),
@@ -514,7 +552,8 @@ class Panel:
             hito = next((h for h in hitos if h["id"] == hito_id), None)
             if hito is None:
                 return no_update
-            return {k: hito[k] for k in ("tipo", "descripcion", "razonamiento", "mensaje", "confirmado")}
+            return {k: hito[k] for k in ("tipo", "descripcion", "razonamiento", "mensaje",
+                                          "confirmado", "marca_tiempo", "marca_tiempo_deteccion")}
 
         @app.callback(
             Output("cajita-detalle", "style"),
@@ -537,43 +576,73 @@ class Panel:
             if not data:
                 return {**estilo_base, "right": "-400px"}, [], [], backdrop_oculto
             color = _COLORES_HITO.get(data["tipo"], _COLOR_HITO_DEFAULT)
+            confirmado = data["confirmado"]
+
+            def _ts(ts):
+                if not ts:
+                    return "—"
+                return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
+
+            ts_deteccion = _ts(data.get("marca_tiempo_deteccion"))
+            ts_verificacion = _ts(data.get("marca_tiempo"))
+
             titulo = [
                 html.Div(data["tipo"].replace("_", " ").upper(),
                          style={"fontFamily": "Rajdhani, sans-serif", "fontSize": "1.2em",
                                 "fontWeight": "700", "color": color}),
-                html.Div("✓ CONFIRMADO" if data["confirmado"] else "✗ SIN CONFIRMAR",
+                html.Div("✓ CONFIRMADO" if confirmado else "✗ DESCARTADO",
                          style={"fontSize": "0.72em", "marginTop": "3px",
-                                "color": "#00e676" if data["confirmado"] else "#ff5252"}),
+                                "color": "#00e676" if confirmado else "#ff5252"}),
             ]
+
+            _s_label = {"fontSize": "0.66em", "color": "#555", "textTransform": "uppercase",
+                        "letterSpacing": "0.08em", "marginBottom": "4px"}
+            _s_bloque = {"marginBottom": "18px"}
+
             cuerpo = [
                 html.Hr(style={"borderColor": "#2a2a3e", "margin": "0 0 16px 0"}),
-                html.Div("Condición detectada",
-                         style={"fontSize": "0.68em", "color": "#555", "textTransform": "uppercase",
-                                "letterSpacing": "0.08em", "marginBottom": "5px"}),
-                html.Div(data["descripcion"],
-                         style={"fontSize": "0.88em", "color": "#b0b0d0", "marginBottom": "16px"}),
+
+                # — Bloque 1: Detección ——————————————————————————
+                html.Div(style=_s_bloque, children=[
+                    html.Div("Detección", style=_s_label),
+                    html.Div(ts_deteccion,
+                             style={"fontSize": "0.78em", "color": "#607080",
+                                    "marginBottom": "6px", "fontVariantNumeric": "tabular-nums"}),
+                    html.Div(data["descripcion"],
+                             style={"fontSize": "0.88em", "color": "#b0b0d0", "lineHeight": "1.5"}),
+                ]),
+
+                # — Bloque 2: Verificación ————————————————————————
+                html.Div(style=_s_bloque, children=[
+                    html.Div("Verificación", style=_s_label),
+                    html.Div(ts_verificacion,
+                             style={"fontSize": "0.78em", "color": "#607080",
+                                    "marginBottom": "6px", "fontVariantNumeric": "tabular-nums"}),
+                    *(
+                        [html.Div(data["mensaje"],
+                                  style={"fontSize": "0.88em", "color": "#e0e0ff",
+                                         "fontStyle": "italic", "padding": "10px 12px",
+                                         "background": "#12122a", "borderRadius": "6px",
+                                         "borderLeft": f"3px solid {color}", "lineHeight": "1.5"})]
+                        if confirmado and data.get("mensaje")
+                        else [html.Div("Hito descartado — no confirmado visualmente.",
+                                       style={"fontSize": "0.85em", "color": "#607080",
+                                              "fontStyle": "italic"})]
+                    ),
+                ]),
             ]
-            if data["confirmado"] and data.get("mensaje"):
-                cuerpo += [
-                    html.Div("Mensaje Gemma",
-                             style={"fontSize": "0.68em", "color": "#555", "textTransform": "uppercase",
-                                    "letterSpacing": "0.08em", "marginBottom": "5px"}),
-                    html.Div(data["mensaje"],
-                             style={"fontSize": "0.88em", "color": "#e0e0ff", "fontStyle": "italic",
-                                    "padding": "10px 12px", "background": "#12122a", "borderRadius": "6px",
-                                    "borderLeft": f"3px solid {color}", "marginBottom": "16px",
-                                    "lineHeight": "1.5"}),
-                ]
-            razonamiento = data.get("razonamiento") or ""
-            if razonamiento and razonamiento not in ("FALSO_POSITIVO", ""):
-                label = "Razonamiento Gemma" if data["confirmado"] else "Error de verificación"
-                cuerpo += [
-                    html.Div(label,
-                             style={"fontSize": "0.68em", "color": "#555", "textTransform": "uppercase",
-                                    "letterSpacing": "0.08em", "marginBottom": "5px"}),
+
+            # — Bloque 3: Pensamiento de Gemma (solo si hay contenido) ——
+            razonamiento = (data.get("razonamiento") or "").strip()
+            if razonamiento and razonamiento not in ("FALSO_POSITIVO",):
+                cuerpo.append(html.Div(style=_s_bloque, children=[
+                    html.Div("Pensamiento de Gemma", style=_s_label),
                     html.Div(razonamiento,
-                             style={"fontSize": "0.82em", "color": "#888", "lineHeight": "1.6"}),
-                ]
+                             style={"fontSize": "0.82em", "color": "#888", "lineHeight": "1.6",
+                                    "padding": "8px 10px", "background": "#0a0a18",
+                                    "borderRadius": "4px", "borderLeft": "2px solid #2a2a4e"}),
+                ]))
+
             return {**estilo_base, "right": "0px"}, titulo, cuerpo, backdrop_visible
 
         _estilo_modelo_base = {

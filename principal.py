@@ -16,6 +16,7 @@ from src.zonas import cargar_zonas
 from src.eventos import GestorEventos
 from src.verificador import Verificador
 from src.base_datos import BaseDatos
+from src.bot_telegram import BotTelegram
 from src.notificador import Notificador
 from src.panel import Panel
 from src.simulador import Simulador
@@ -60,11 +61,16 @@ def main() -> None:
 
     base_datos = BaseDatos(ruta=config["base_datos"]["ruta"])
 
+    bot_telegram = None
+    if config.get("notificaciones", {}).get("telegram", {}).get("activo", False):
+        bot_telegram = BotTelegram(base_datos=base_datos, rastreador=rastreador)
+
     notificador = Notificador(
         cola_entrada=verificador.cola_salida,
         base_datos=base_datos,
         config_notificaciones=config["notificaciones"],
         config_capturas=config["capturas"],
+        bot_telegram=bot_telegram,
     )
 
     if config.get("panel", {}).get("activo", False):
@@ -89,7 +95,10 @@ def main() -> None:
             zonas=zonas,
         )
 
-    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador, interfaz]
+    modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador]
+    if bot_telegram:
+        modulos.append(bot_telegram)
+    modulos.append(interfaz)
 
     def apagar(sig, frame):
         logger.info("Señal de parada recibida. Deteniendo módulos...")

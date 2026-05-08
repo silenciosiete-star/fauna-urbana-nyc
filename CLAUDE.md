@@ -23,7 +23,7 @@ Repositorio privado: https://github.com/silenciosiete-star/fauna-urbana-nyc
 | YOLO26 fine-tuned como único modelo de detección | Clasifica y detecta en un solo paso, rápido. Dataset mixto: personajes (anotados a mano) + vehículos COCO (ya anotados). Un solo modelo cubre ambas zonas. STAL (Small-Target-Aware Label Assignment) mejora la detección de personajes pequeños/lejanos, que es el caso de la cámara de Times Square. |
 | SAM3 descartado | Bounding boxes son suficientes para todos los casos de uso del proyecto |
 | Gemma 4 como verificador y narrador de hitos | YOLO detecta la condición; Gemma confirma con criterio semántico y redacta la notificación. Se llama de forma asíncrona para no congelar el stream. |
-| Dos proveedores para Gemma según entorno | Desarrollo: HuggingFace Inference API. Producción: Ollama en servidor de red local (192.168.0.135). Se cambia con `GEMMA_PROVEEDOR` en `.env`, sin tocar código. |
+| Dos proveedores para Gemma según entorno | Desarrollo: Google AI Studio (`GEMMA_PROVEEDOR=google`, requiere `GEMINI_API_KEY`). Producción: Ollama en servidor de red local 192.168.0.135 (`GEMMA_PROVEEDOR=ollama`). Se cambia en `.env`, sin tocar código. |
 | Dos modelos YOLO en inferencia | `modelos/fauna_urbana.pt` para las 11 clases de personajes. Modelo pretrained COCO para vehículos (zona izquierda). No se mezclan en el mismo fine-tuning: el dataset de personajes es demasiado pequeño para coexistir con COCO sin degradar la detección de personajes. |
 | Captura e inferencia en hilos separados | Evita que un frame lento de YOLO bloquee la lectura del stream |
 | Procesar 1 de cada N frames (configurable) | Supervision/ByteTrack interpola el tracking entre frames no analizados |
@@ -67,6 +67,41 @@ El sistema ha detectado un posible hito: [descripción del hito].
 - Ruta al frame guardado
 
 Si Gemma devuelve `FALSO_POSITIVO`, el hito no se dispara y se registra como descartado.
+
+---
+
+## Bot de Telegram — cómo funciona
+
+`src/bot_telegram.py` agrupa en un único módulo las dos funciones Telegram del sistema: notificaciones push automáticas y comandos interactivos del usuario.
+
+**Configuración necesaria (en `.env`):**
+```
+TELEGRAM_TOKEN=<token de @BotFather>
+TELEGRAM_CHAT_ID=<ID del chat que recibirá las notificaciones>
+```
+Para obtener el token: habla con `@BotFather` en Telegram → `/newbot`.
+Para obtener el chat ID: escríbele `/start` al bot recién creado y luego abre en el navegador `https://api.telegram.org/bot<TOKEN>/getUpdates` — el campo `result[0].message.chat.id` es tu ID. Alternativamente, `@userinfobot` te lo da al instante.
+
+Si `TELEGRAM_TOKEN` no está configurado, `BotTelegram.iniciar()` emite un warning y el resto del sistema sigue funcionando sin Telegram.
+
+**Hilo de ejecución:**
+
+El bot corre en su propio hilo con un event loop asyncio dedicado. Esto evita conflictos con el resto de hilos del sistema que son síncronos.
+
+**Notificaciones push (automáticas):**
+
+Cuando `Notificador` recibe un hito confirmado, llama a `bot_telegram.enviar_hito(hito)`. El bot envía al chat una foto del frame anotado con el tipo de hito en negrita y el mensaje jocoso generado por Gemma como pie de foto.
+
+**Comandos interactivos:**
+
+| Comando | Respuesta |
+|---------|-----------|
+| `/donde` | Personajes visibles en el último frame analizado con su conteo y hora |
+| `/cuantos` | Estadística de hitos confirmados vs descartados (últimos 100) |
+| `/captura` | Foto del frame actual con timestamp |
+| `/estado` | Lista de los últimos 5 hitos registrados en BD |
+
+`/donde` y `/captura` leen `rastreador.ultimo_resultado`, un atributo que el `Rastreador` actualiza en cada frame procesado. Si el sistema lleva menos de un ciclo activo, responden que aún no hay frame disponible.
 
 ---
 
@@ -153,7 +188,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 | **mickey_mouse** | **0.580** | Recall bajo (0.37) — confusión con minnie. Mejorable añadiendo más imágenes. |
 | **global** | **0.879** | |
 
-- [ ] Prueba en vivo con stream real ← **PENDIENTE** (ver nota sobre streams más abajo)
+- [x] Prueba en vivo con stream real — superada con stream `a9J1OP_x5Rg`
 
 ### Fase 3 — Extras
 - [x] Panel web (`panel.py`) — Dash + MJPEG, stats en stream, controles pausa/captura, zonas ajustadas
@@ -161,8 +196,8 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `verificador.py` — Gemma 4 vía Google AI Studio (tool calling), proveedor configurable
 - [x] Email vía Google Apps Script — Gemma llama a `enviar_email` como tool call
 - [x] Panel: drawer lateral de detalle, desplegable Simular mejorado, feedback "verificando..."
-- [ ] **Probar email en producción** ← pendiente confirmar ciclo completo con stream real
-- [ ] **Bot de Telegram con comandos interactivos** ← pendiente
+- [x] **Email vía GAS** — ciclo completo verificado: Gemma confirma hito → email recibido en `78818937f@cifpzonzamas.es`
+- [x] **Bot de Telegram** — `src/bot_telegram.py`: push de hitos con foto + comandos `/donde`, `/cuantos`, `/captura`, `/estado`
 - [ ] Síntesis de voz (TTS)
 - [ ] Mapa de calor
 - [ ] Docker
@@ -182,16 +217,17 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `eventos.py`: 5 hitos con umbral de frames consecutivos, cooldown y cola de salida
 - [x] `verificador.py`: Gemma 4 (Google AI Studio) con tool calling — confirma hito y envía email
 - [x] `base_datos.py`: registro en SQLite con razonamiento de Gemma
-- [x] `notificador.py`: guarda frame, registra en BD, envía Telegram y TTS
+- [x] `notificador.py`: guarda frame, registra en BD, delega Telegram a BotTelegram y TTS
+- [x] `bot_telegram.py`: bot unificado — push de hitos + comandos interactivos
 - [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
 - [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
 
-- **Probar email extremo a extremo**: lanzar simulación con stream real activo y verificar que llega el email a `78818937f@cifpzonzamas.es`. GAS URL y API key de Google en `.env`.
-- **Bot de Telegram**: implementar `src/bot_telegram.py` con comandos `/donde`, `/cuantos`, `/captura`, `/estado`. Requiere `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` en `.env`.
+- ~~**Probar email extremo a extremo**~~ — completado. Email llega correctamente a `78818937f@cifpzonzamas.es`.
+- ~~**Bot de Telegram**~~ — implementado. Rellenar `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` en `.env` para activar.
 - **Prueba en vivo (Fase 2)**: stream alternativo `https://www.youtube.com/watch?v=a9J1OP_x5Rg`. El principal (`rnXIjl_Rzy4`) puede estar operativo — comprobar al retomar.
-- **Gemma en producción**: cambiar `GEMMA_PROVEEDOR=ollama` en `.env` para usar Gemma 4 local en `192.168.0.135`. Ya configurado en `config.yaml`.
+- **Gemma en producción**: cambiar `GEMMA_PROVEEDOR=ollama` en `.env` para usar Gemma 4 local en `192.168.0.135` (en desarrollo se usa `google` con Google AI Studio).
 - **Panel de modelo — resultados del entrenamiento**: copiar la carpeta de salida de YOLO (normalmente `runs/detect/train/`) del equipo con RTX 4080 Super a `modelos/fauna_urbana/` en este equipo. El panel espera ahí `results.csv`, `confusion_matrix_normalized.png` y las gráficas de curvas. Sin esos archivos la pestaña Modelo del panel no carga.
 - **mickey_mouse**: recall bajo (0.37) — recolectar más imágenes si falla en producción.

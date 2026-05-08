@@ -9,14 +9,15 @@ from .verificador import HitoVerificado
 
 _CREAR_TABLA = """
 CREATE TABLE IF NOT EXISTS hitos (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    marca_tiempo     REAL    NOT NULL,
-    tipo             TEXT    NOT NULL,
-    descripcion      TEXT    NOT NULL,
-    confirmado       INTEGER NOT NULL,
-    razonamiento     TEXT    NOT NULL,
-    mensaje          TEXT,
-    ruta_frame       TEXT
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    marca_tiempo             REAL    NOT NULL,
+    marca_tiempo_deteccion   REAL,
+    tipo                     TEXT    NOT NULL,
+    descripcion              TEXT    NOT NULL,
+    confirmado               INTEGER NOT NULL,
+    razonamiento             TEXT    NOT NULL,
+    mensaje                  TEXT,
+    ruta_frame               TEXT
 )
 """
 
@@ -29,6 +30,10 @@ class BaseDatos:
         Path(ruta).parent.mkdir(parents=True, exist_ok=True)
         with self._conectar() as con:
             con.execute(_CREAR_TABLA)
+            try:
+                con.execute("ALTER TABLE hitos ADD COLUMN marca_tiempo_deteccion REAL")
+            except Exception:
+                pass  # columna ya existe
         logger.info(f"Base de datos lista: {ruta}")
 
     def registrar_hito(self, hito: HitoVerificado, ruta_frame: str | None = None) -> None:
@@ -36,10 +41,12 @@ class BaseDatos:
             with self._conectar() as con:
                 con.execute(
                     """INSERT INTO hitos
-                       (marca_tiempo, tipo, descripcion, confirmado, razonamiento, mensaje, ruta_frame)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (marca_tiempo, marca_tiempo_deteccion, tipo, descripcion,
+                        confirmado, razonamiento, mensaje, ruta_frame)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         hito.marca_tiempo,
+                        hito.marca_tiempo_deteccion,
                         hito.tipo,
                         hito.descripcion,
                         int(hito.confirmado),

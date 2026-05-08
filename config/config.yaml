@@ -84,7 +84,7 @@ notificaciones:
     # GAS_EMAIL_URL va en .env
 
   telegram:
-    activo: false                 # Activar cuando se configure el bot
+    activo: true                  # Requiere TELEGRAM_TOKEN y TELEGRAM_CHAT_ID en .env
     # Las credenciales van en .env, no aquí. Ver .env.example
 
   tts:

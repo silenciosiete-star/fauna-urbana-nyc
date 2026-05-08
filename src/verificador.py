@@ -14,6 +14,15 @@ from loguru import logger
 
 from .eventos import HitoPotencial
 
+_COLORES_HITO = {
+    "crossover":           "#ff9800",
+    "conflicto_identidad": "#e040fb",
+    "hora_punta":          "#00bcd4",
+    "avistamiento_raro":   "#4caf50",
+    "marvel_vs_dc":        "#f44336",
+}
+_COLOR_HITO_DEFAULT = "#607d8b"
+
 _HERRAMIENTA_EMAIL = {
     "type": "function",
     "function": {
@@ -54,6 +63,89 @@ _PROMPT_PLANTILLA = (
 )
 
 
+def _construir_html_email(tipo: str, descripcion: str, mensaje: str, marca_tiempo: float) -> str:
+    import datetime
+    color = _COLORES_HITO.get(tipo, _COLOR_HITO_DEFAULT)
+    ts = datetime.datetime.fromtimestamp(marca_tiempo).strftime("%d/%m/%Y  %H:%M:%S")
+    tipo_label = tipo.replace("_", " ").upper()
+    return f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:24px;background:#f0f2f5;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+  <tr><td style="background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #dde1e7;
+                 box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+
+    <!-- Cabecera -->
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="background:{color}12;border-bottom:3px solid {color};padding:20px 24px">
+      <tr>
+        <td>
+          <div style="font-size:1.4em;font-weight:700;color:{color};letter-spacing:0.06em">
+            FAUNA URBANA NYC
+          </div>
+          <div style="font-size:0.85em;color:#6b7280;margin-top:3px">
+            Times Square · Vigilancia en directo
+          </div>
+        </td>
+        <td style="text-align:right;font-size:0.82em;color:#9ca3af;white-space:nowrap;padding-left:16px">
+          {ts}
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="padding:22px 24px">
+
+      <!-- Badge hito -->
+      <tr><td style="padding-bottom:18px">
+        <table cellpadding="0" cellspacing="0"
+               style="background:{color}0d;border-left:4px solid {color};
+                      border-radius:0 6px 6px 0;padding:12px 16px;width:100%">
+          <tr>
+            <td>
+              <div style="font-size:0.72em;color:#6b7280;text-transform:uppercase;
+                          letter-spacing:0.1em;margin-bottom:5px">HITO DETECTADO</div>
+              <div style="font-size:1.35em;font-weight:700;color:{color}">{tipo_label}</div>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+
+      <!-- Condición -->
+      <tr><td style="padding-bottom:18px">
+        <div style="font-size:0.72em;color:#6b7280;text-transform:uppercase;
+                    letter-spacing:0.1em;margin-bottom:6px">CONDICIÓN DETECTADA</div>
+        <div style="font-size:1em;color:#374151;line-height:1.6">{descripcion}</div>
+      </td></tr>
+
+      <!-- Mensaje Gemma -->
+      <tr><td style="padding-bottom:22px">
+        <table cellpadding="0" cellspacing="0"
+               style="background:#f8f9fa;border-left:3px solid {color};
+                      border-radius:0 6px 6px 0;padding:14px 16px;width:100%">
+          <tr><td>
+            <div style="font-size:0.72em;color:#6b7280;text-transform:uppercase;
+                        letter-spacing:0.1em;margin-bottom:8px">REPORTE DE GEMMA</div>
+            <div style="font-size:1em;color:#1f2937;font-style:italic;line-height:1.7">
+              {mensaje}
+            </div>
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="border-top:1px solid #e5e7eb;padding-top:14px">
+        <div style="font-size:0.78em;color:#9ca3af">
+          Notificación automática · Fauna Urbana NYC
+        </div>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+
 @dataclass
 class HitoVerificado:
     tipo: str
@@ -62,6 +154,7 @@ class HitoVerificado:
     confirmado: bool
     razonamiento: str
     mensaje: str | None  # None si es FALSO_POSITIVO
+    marca_tiempo_deteccion: float = field(default_factory=time.time)
     marca_tiempo: float = field(default_factory=time.time)
 
 
@@ -158,7 +251,7 @@ class Verificador:
         if llamada and llamada["nombre"] == "enviar_email":
             args = llamada["argumentos"]
             if self._email_activo:
-                self._enviar_email(args["asunto"], args["cuerpo"])
+                self._enviar_email(args["asunto"], args["cuerpo"], hito)
             logger.info(f"Hito '{hito.tipo}' → CONFIRMADO")
             logger.debug(f"Mensaje Gemma: {args['cuerpo']}")
             return HitoVerificado(
@@ -166,8 +259,9 @@ class Verificador:
                 frame=hito.frame,
                 descripcion=hito.descripcion,
                 confirmado=True,
-                razonamiento=contenido or "Hito confirmado por Gemma.",
+                razonamiento=contenido or "",
                 mensaje=args["cuerpo"],
+                marca_tiempo_deteccion=hito.marca_tiempo,
             )
 
         logger.info(f"Hito '{hito.tipo}' → FALSO POSITIVO")
@@ -178,6 +272,7 @@ class Verificador:
             confirmado=False,
             razonamiento=contenido or "FALSO_POSITIVO",
             mensaje=None,
+            marca_tiempo_deteccion=hito.marca_tiempo,
         )
 
     def _llamar_huggingface(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
@@ -291,15 +386,21 @@ class Verificador:
 
         return contenido, llamada
 
-    def _enviar_email(self, asunto: str, cuerpo: str) -> None:
+    def _enviar_email(self, asunto: str, cuerpo: str, hito: "HitoPotencial") -> None:
         url = os.getenv("GAS_EMAIL_URL", "")
         if not url:
             logger.warning("GAS_EMAIL_URL no configurada — email no enviado")
             return
-        respuesta = httpx.post(url, json={"asunto": asunto, "cuerpo": cuerpo},
-                               timeout=10, follow_redirects=True)
+        asunto_completo = f"Fauna Urbana NYC — {asunto}"
+        html_cuerpo = _construir_html_email(hito.tipo, hito.descripcion, cuerpo, hito.marca_tiempo)
+        respuesta = httpx.post(
+            url,
+            json={"asunto": asunto_completo, "cuerpo": cuerpo, "html_cuerpo": html_cuerpo},
+            timeout=10,
+            follow_redirects=True,
+        )
         respuesta.raise_for_status()
-        logger.debug(f"Email enviado: {asunto}")
+        logger.debug(f"Email enviado: {asunto_completo}")
 
 
 # ------------------------------------------------------------------

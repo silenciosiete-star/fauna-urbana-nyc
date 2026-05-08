@@ -1,16 +1,18 @@
 """Despacha hitos verificados: guarda frame, registra en BD, envía Telegram y TTS."""
-import asyncio
 import datetime
-import os
 import queue
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 from loguru import logger
 
 from .base_datos import BaseDatos
 from .verificador import HitoVerificado
+
+if TYPE_CHECKING:
+    from .bot_telegram import BotTelegram
 
 
 class Notificador:
@@ -21,22 +23,20 @@ class Notificador:
         base_datos: BaseDatos,
         config_notificaciones: dict,
         config_capturas: dict,
+        bot_telegram: "BotTelegram | None" = None,
     ):
         self.cola_entrada = cola_entrada
         self._bd = base_datos
         self._cfg_notif = config_notificaciones
         self._carpeta_capturas = Path(config_capturas.get("carpeta", "capturas/"))
         self._guardar_frame = config_capturas.get("guardar_en_hito", True)
+        self._bot_telegram = bot_telegram
         self._activo = False
         self._hilo: threading.Thread | None = None
-        self._bot = None
 
     def iniciar(self) -> None:
         self._activo = True
         self._carpeta_capturas.mkdir(parents=True, exist_ok=True)
-        if self._cfg_notif.get("telegram", {}).get("activo", False):
-            from telegram import Bot
-            self._bot = Bot(token=os.getenv("TELEGRAM_TOKEN", ""))
         self._hilo = threading.Thread(target=self._bucle_notificaciones, daemon=True)
         self._hilo.start()
         logger.info("Notificador iniciado")
@@ -64,8 +64,8 @@ class Notificador:
 
             logger.info(f"Hito confirmado: {hito.tipo} — {hito.mensaje}")
 
-            if self._cfg_notif.get("telegram", {}).get("activo", False):
-                self._enviar_telegram(hito)
+            if self._bot_telegram:
+                self._bot_telegram.enviar_hito(hito)
 
             if self._cfg_notif.get("tts", {}).get("activo", False):
                 self._reproducir_tts(hito)
@@ -80,14 +80,6 @@ class Notificador:
         except Exception as error:
             logger.error(f"Error guardando frame: {error}")
             return None
-
-    def _enviar_telegram(self, hito: HitoVerificado) -> None:
-        try:
-            chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-            asyncio.run(self._bot.send_message(chat_id=chat_id, text=hito.mensaje))
-            logger.debug("Mensaje Telegram enviado")
-        except Exception as error:
-            logger.error(f"Error enviando Telegram: {error}")
 
     def _reproducir_tts(self, hito: HitoVerificado) -> None:
         try:

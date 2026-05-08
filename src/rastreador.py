@@ -24,6 +24,7 @@ class Rastreador:
         self.cola_entrada = cola_entrada
         self.cola_salida: queue.Queue = queue.Queue(maxsize=5)
         self.cola_display: queue.Queue = queue.Queue(maxsize=5)
+        self.ultimo_resultado: ResultadoTracking | None = None
         self._tracker = sv.ByteTrack()
         self._activo = False
         self._hilo: threading.Thread | None = None
@@ -60,6 +61,7 @@ class Rastreador:
                 frame=resultado.frame,
                 detecciones=detecciones_con_id,
             )
+            self.ultimo_resultado = resultado_tracking
 
             for cola in (self.cola_salida, self.cola_display):
                 if cola.full():
