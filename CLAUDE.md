@@ -116,7 +116,7 @@ Cuando `Notificador` recibe un hito confirmado, llama a `bot_telegram.enviar_hit
 | Panel web | Dash + Plotly |
 | Base de datos | SQLite |
 | Notificaciones | python-telegram-bot |
-| Síntesis de voz | pyttsx3 |
+| Síntesis de voz | Kokoro TTS 82M (hexgrad/Kokoro-82M) — voz `ef_dora`, español |
 | Config | YAML (config/config.yaml) |
 
 ---
@@ -201,7 +201,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] **Drawer de hito mejorado** — imagen del frame capturado, razonamiento de Gemma, badges de acciones disparadas (email/Telegram/captura)
 - [x] **Mapa de calor** — toggle "🌡 Calor" en el panel; acumulación en el punto suelo del bbox (cx, by1), radio fijo 20 px para igualar todos los personajes, decay temporal (0.990/frame), normalización por cap fijo, colormap JET; compatible con modo trayectorias activo simultáneamente
 - [x] **Trayectorias** — toggle "🛤 Trayectorias" en el panel; trail por `tracker_id` (deque maxlen=100, ~4 s a 25 fps), dibujado de antiguo→reciente con fade de color y grosor, color único por ID derivado de HSV
-- [ ] Síntesis de voz (TTS)
+- [x] **TTS agent2agent con Kokoro** — Gemma llama a `sintetizar_voz` como tool call (junto a `enviar_email`); `notificador.py` ejecuta Kokoro TTS 82M con voz `ef_dora` (español); icono 🔊 animado en el panel sobre el hito que está sonando; badge `🔊 Voz` en el drawer de acciones. Requiere: `apt install espeak-ng` + `pip install kokoro>=0.9.2 sounddevice soundfile`
 - [ ] Docker
 - [ ] **Audio en el panel** ← solución correcta: reemplazar MJPEG por `<video>` HTML5 + `<canvas>` + WebSocket
 
@@ -222,7 +222,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `notificador.py`: guarda frame, registra en BD, delega Telegram a BotTelegram y TTS
 - [x] `bot_telegram.py`: bot unificado — push de hitos + comandos interactivos
 - [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
-- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle, trayectorias por tracker_id con toggle
+- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle, trayectorias por tracker_id con toggle, icono 🔊 animado en hito reproduciendo
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
@@ -233,3 +233,6 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - **Gemma en producción**: cambiar `GEMMA_PROVEEDOR=ollama` en `.env` para usar Gemma 4 local en `192.168.0.135` (en desarrollo se usa `google` con Google AI Studio).
 - **Panel de modelo — resultados del entrenamiento**: copiar la carpeta de salida de YOLO (normalmente `runs/detect/train/`) del equipo con RTX 4080 Super a `modelos/fauna_urbana/` en este equipo. El panel espera ahí `results.csv`, `confusion_matrix_normalized.png` y las gráficas de curvas. Sin esos archivos la pestaña Modelo del panel no carga.
 - **mickey_mouse**: recall bajo (0.37) — recolectar más imágenes si falla en producción.
+- **transformer**: detección débil observada en producción — apunte para futura iteración del dataset, no prioritario.
+- **Probar TTS Kokoro en vivo**: instalar `espeak-ng` + `kokoro` + `sounddevice` en el equipo de producción y verificar que `ef_dora` en español suena correctamente con una frase de prueba antes de la demo.
+- **Hitos en proceso — mostrar varios simultáneos**: `Verificador._bucle_verificacion` es single-threaded, procesa un hito a la vez; si llegan dos hitos casi simultáneos el segundo espera en cola y no aparece en el panel como "verificando". Solución: añadir un pool de workers (p.ej. `ThreadPoolExecutor`) en el verificador y actualizar `_en_proceso` para reflejar todos los hitos activos.
