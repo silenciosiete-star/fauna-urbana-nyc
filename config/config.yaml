@@ -88,8 +88,7 @@ notificaciones:
     # Las credenciales van en .env, no aquí. Ver .env.example
 
   tts:
-    activo: false
-    velocidad: 150
+    activo: true
 
 base_datos:
   ruta: "fauna_urbana.db"

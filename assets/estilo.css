@@ -209,3 +209,10 @@ body { margin: 0; background: #07070f; color: #e0e0f0; font-family: 'Inter', san
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #08081a; }
 ::-webkit-scrollbar-thumb { background: #22223a; border-radius: 2px; }
+
+/* ── Animación icono audio ──────────────────────────── */
+
+@keyframes pulso-audio {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+}

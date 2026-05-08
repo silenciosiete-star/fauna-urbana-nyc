@@ -109,6 +109,7 @@ class Panel:
         self._tracking_activo = False
         self._trails: dict[int, deque] = {}
         self._lock_trails = threading.Lock()
+        self._hito_reproduciendo: float | None = None
         self._app = self._crear_app()
 
     def conectar_simulador(self, simulador: Simulador) -> None:
@@ -117,6 +118,9 @@ class Panel:
 
     def conectar_verificador(self, verificador: Verificador) -> None:
         self._verificador = verificador
+
+    def set_reproduciendo(self, marca_tiempo: float | None) -> None:
+        self._hito_reproduciendo = marca_tiempo
 
     def iniciar(self) -> None:
         self._activo = True
@@ -436,6 +440,15 @@ class Panel:
                 color_borde = _COLORES_HITO.get(h["tipo"], _COLOR_HITO_DEFAULT)
                 color_estado = "#00e676" if h["confirmado"] else "#ff5252"
                 estado_txt = "✓" if h["confirmado"] else "✗"
+                sonando = (
+                    self._hito_reproduciendo is not None
+                    and abs(h["marca_tiempo"] - self._hito_reproduciendo) < 1.0
+                )
+                icono_audio = [html.Span(
+                    "🔊",
+                    style={"fontSize": "0.85em", "marginLeft": "6px",
+                           "animation": "pulso-audio 0.8s ease-in-out infinite"},
+                )] if sonando else []
                 elementos.append(html.Div(
                     id={"type": "hito-card", "index": h["id"]},
                     className="hito-card hito-card-clickable",
@@ -448,6 +461,7 @@ class Panel:
                                 html.Span(ts, className="hito-ts"),
                                 html.Span(estado_txt, className="hito-estado", style={"color": color_estado}),
                                 html.Span(h["tipo"].replace("_", " "), className="hito-tipo"),
+                                *icono_audio,
                                 html.Span("ver detalle →", style={"marginLeft": "auto", "fontSize": "0.75em", "color": "#555"}),
                             ],
                         ),
@@ -702,6 +716,7 @@ class Panel:
                 "email":    ("📧", "Email",    "#ff9800"),
                 "telegram": ("💬", "Telegram", "#29b6f6"),
                 "captura":  ("📸", "Captura",  "#78909c"),
+                "voz":      ("🔊", "Voz",      "#7c4dff"),
             }
             acciones_raw = data.get("acciones") or ""
             acciones_lista = [a for a in acciones_raw.split(",") if a]

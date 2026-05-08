@@ -17,7 +17,11 @@ plotly
 
 # Notificaciones
 python-telegram-bot
-pyttsx3
+
+# TTS — Kokoro (requiere: apt install espeak-ng)
+kokoro>=0.9.2
+sounddevice
+soundfile
 
 # Utilidades
 pyyaml

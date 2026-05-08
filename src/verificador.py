@@ -23,6 +23,24 @@ _COLORES_HITO = {
 }
 _COLOR_HITO_DEFAULT = "#607d8b"
 
+_HERRAMIENTA_VOZ = {
+    "type": "function",
+    "function": {
+        "name": "sintetizar_voz",
+        "description": "Sintetiza en voz alta el mensaje de alerta delegando en el modelo de TTS local.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "texto": {
+                    "type": "string",
+                    "description": "Texto a vocalizar: máximo 2 frases, tono jocoso, en español",
+                },
+            },
+            "required": ["texto"],
+        },
+    },
+}
+
 _HERRAMIENTA_EMAIL = {
     "type": "function",
     "function": {
@@ -58,7 +76,8 @@ _PROMPT_PLANTILLA = (
     "Objetos que YOLO tiene localizados en este frame: {detecciones_str}.\n"
     "La imagen muestra el frame anotado con sus bounding boxes.\n\n"
     "¿Lo confirmas visualmente? Escribe en 1-2 frases qué ves en la imagen y si la condición se cumple. Luego:\n"
-    "• Si la condición se cumple → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
+    "• Si la condición se cumple → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases) "
+    "y también a sintetizar_voz con el mismo texto jocoso en español.\n"
     "• Si no se cumple → escribe al final: FALSO_POSITIVO"
 )
 
@@ -154,6 +173,7 @@ class HitoVerificado:
     confirmado: bool
     razonamiento: str
     mensaje: str | None  # None si es FALSO_POSITIVO
+    texto_tts: str | None = None  # set cuando Gemma llama sintetizar_voz
     marca_tiempo_deteccion: float = field(default_factory=time.time)
     marca_tiempo: float = field(default_factory=time.time)
 
@@ -172,6 +192,7 @@ class Verificador:
         self._proveedor = os.getenv("GEMMA_PROVEEDOR", config_gemma.get("proveedor", "huggingface"))
         self._timeout = config_gemma.get("timeout_segundos", 15)
         self._email_activo = config_notificaciones.get("email", {}).get("activo", False)
+        self._tts_activo = config_notificaciones.get("tts", {}).get("activo", False)
         self._activo = False
         self._hilo: threading.Thread | None = None
         self._en_proceso: list[dict] = []
@@ -242,25 +263,31 @@ class Verificador:
         )
 
         if self._proveedor == "ollama":
-            contenido, llamada = self._llamar_ollama(prompt, frame_b64)
+            contenido, llamadas = self._llamar_ollama(prompt, frame_b64)
         elif self._proveedor == "google":
-            contenido, llamada = self._llamar_google(prompt, frame_b64)
+            contenido, llamadas = self._llamar_google(prompt, frame_b64)
         else:
-            contenido, llamada = self._llamar_huggingface(prompt, frame_b64)
+            contenido, llamadas = self._llamar_huggingface(prompt, frame_b64)
 
-        if llamada and llamada["nombre"] == "enviar_email":
-            args = llamada["argumentos"]
+        args_email = next((l["argumentos"] for l in llamadas if l["nombre"] == "enviar_email"), None)
+        args_voz   = next((l["argumentos"] for l in llamadas if l["nombre"] == "sintetizar_voz"), None)
+
+        if args_email:
             if self._email_activo:
-                self._enviar_email(args["asunto"], args["cuerpo"], hito)
-            logger.info(f"Hito '{hito.tipo}' → CONFIRMADO")
-            logger.debug(f"Mensaje Gemma: {args['cuerpo']}")
+                self._enviar_email(args_email["asunto"], args_email["cuerpo"], hito)
+            if args_voz:
+                logger.info(f"Hito '{hito.tipo}' → CONFIRMADO (email + voz)")
+            else:
+                logger.info(f"Hito '{hito.tipo}' → CONFIRMADO (email)")
+            logger.debug(f"Mensaje Gemma: {args_email['cuerpo']}")
             return HitoVerificado(
                 tipo=hito.tipo,
                 frame=hito.frame,
                 descripcion=hito.descripcion,
                 confirmado=True,
                 razonamiento=contenido or "",
-                mensaje=args["cuerpo"],
+                mensaje=args_email["cuerpo"],
+                texto_tts=args_voz["texto"] if args_voz else None,
                 marca_tiempo_deteccion=hito.marca_tiempo,
             )
 
@@ -275,7 +302,13 @@ class Verificador:
             marca_tiempo_deteccion=hito.marca_tiempo,
         )
 
-    def _llamar_huggingface(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
+    def _herramientas(self) -> list:
+        tools = [_HERRAMIENTA_EMAIL]
+        if self._tts_activo:
+            tools.append(_HERRAMIENTA_VOZ)
+        return tools
+
+    def _llamar_huggingface(self, prompt: str, frame_b64: str) -> tuple[str, list[dict]]:
         token = os.getenv("HUGGINGFACE_TOKEN", "")
         modelo = self._config["modelo_nombre"]
         url = "https://api-inference.huggingface.co/v1/chat/completions"
@@ -291,7 +324,7 @@ class Verificador:
                     ],
                 }
             ],
-            "tools": [_HERRAMIENTA_EMAIL],
+            "tools": self._herramientas(),
             "tool_choice": "auto",
             "max_tokens": 300,
         }
@@ -302,18 +335,16 @@ class Verificador:
         mensaje = respuesta.json()["choices"][0]["message"]
 
         contenido = mensaje.get("content") or ""
-        llamada = None
-        tool_calls = mensaje.get("tool_calls") or []
-        if tool_calls:
-            tc = tool_calls[0]
-            llamada = {
+        llamadas = []
+        for tc in (mensaje.get("tool_calls") or []):
+            llamadas.append({
                 "nombre": tc["function"]["name"],
                 "argumentos": json.loads(tc["function"]["arguments"]),
-            }
+            })
 
-        return contenido, llamada
+        return contenido, llamadas
 
-    def _llamar_ollama(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
+    def _llamar_ollama(self, prompt: str, frame_b64: str) -> tuple[str, list[dict]]:
         url_base = os.getenv("OLLAMA_URL", "http://192.168.0.135:11434")
         modelo = self._config.get("ollama_modelo", self._config["modelo_nombre"].split("/")[-1])
 
@@ -326,7 +357,7 @@ class Verificador:
                     "images": [frame_b64],
                 }
             ],
-            "tools": [_HERRAMIENTA_EMAIL],
+            "tools": self._herramientas(),
             "stream": False,
         }
 
@@ -335,20 +366,18 @@ class Verificador:
         mensaje = respuesta.json()["message"]
 
         contenido = mensaje.get("content") or ""
-        llamada = None
-        tool_calls = mensaje.get("tool_calls") or []
-        if tool_calls:
-            tc = tool_calls[0]
+        llamadas = []
+        for tc in (mensaje.get("tool_calls") or []):
             # Ollama devuelve argumentos ya como dict, no como string JSON
             args = tc["function"]["arguments"]
-            llamada = {
+            llamadas.append({
                 "nombre": tc["function"]["name"],
                 "argumentos": args if isinstance(args, dict) else json.loads(args),
-            }
+            })
 
-        return contenido, llamada
+        return contenido, llamadas
 
-    def _llamar_google(self, prompt: str, frame_b64: str) -> tuple[str, dict | None]:
+    def _llamar_google(self, prompt: str, frame_b64: str) -> tuple[str, list[dict]]:
         clave = os.getenv("GEMINI_API_KEY", "")
         modelo = self._config.get("gemini_modelo", "models/gemma-4-26b-a4b-it")
         url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
@@ -364,7 +393,7 @@ class Verificador:
                     ],
                 }
             ],
-            "tools": [_HERRAMIENTA_EMAIL],
+            "tools": self._herramientas(),
             "tool_choice": "auto",
             "max_tokens": 300,
         }
@@ -375,16 +404,14 @@ class Verificador:
         mensaje = respuesta.json()["choices"][0]["message"]
 
         contenido = mensaje.get("content") or ""
-        llamada = None
-        tool_calls = mensaje.get("tool_calls") or []
-        if tool_calls:
-            tc = tool_calls[0]
-            llamada = {
+        llamadas = []
+        for tc in (mensaje.get("tool_calls") or []):
+            llamadas.append({
                 "nombre": tc["function"]["name"],
                 "argumentos": json.loads(tc["function"]["arguments"]),
-            }
+            })
 
-        return contenido, llamada
+        return contenido, llamadas
 
     def _enviar_email(self, asunto: str, cuerpo: str, hito: "HitoPotencial") -> None:
         url = os.getenv("GAS_EMAIL_URL", "")

@@ -88,6 +88,7 @@ def main() -> None:
         )
         interfaz.conectar_simulador(simulador)
         interfaz.conectar_verificador(verificador)
+        notificador.cb_tts = interfaz.set_reproduciendo
     else:
         interfaz = Visualizador(
             cola_frames=capturador.cola_display,

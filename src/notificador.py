@@ -3,7 +3,7 @@ import datetime
 import queue
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import cv2
 from loguru import logger
@@ -33,6 +33,8 @@ class Notificador:
         self._bot_telegram = bot_telegram
         self._activo = False
         self._hilo: threading.Thread | None = None
+        self._pipeline_tts = None  # carga lazy de KPipeline en el primer hito
+        self.cb_tts: Callable[[float | None], None] | None = None
 
     def iniciar(self) -> None:
         self._activo = True
@@ -66,6 +68,8 @@ class Notificador:
                     acciones.append("email")
                 if self._bot_telegram:
                     acciones.append("telegram")
+                if hito.texto_tts:
+                    acciones.append("voz")
 
             self._bd.registrar_hito(hito, ruta_frame, acciones)
 
@@ -77,7 +81,7 @@ class Notificador:
             if self._bot_telegram:
                 self._bot_telegram.enviar_hito(hito)
 
-            if self._cfg_notif.get("tts", {}).get("activo", False):
+            if hito.texto_tts:
                 self._reproducir_tts(hito)
 
     def _guardar_captura(self, hito: HitoVerificado) -> str | None:
@@ -93,11 +97,23 @@ class Notificador:
 
     def _reproducir_tts(self, hito: HitoVerificado) -> None:
         try:
-            import pyttsx3
-            velocidad = self._cfg_notif.get("tts", {}).get("velocidad", 150)
-            motor = pyttsx3.init()
-            motor.setProperty("rate", velocidad)
-            motor.say(hito.mensaje)
-            motor.runAndWait()
+            from kokoro import KPipeline
+            import sounddevice as sd
+
+            if self._pipeline_tts is None:
+                logger.info("Cargando pipeline Kokoro TTS (primera vez)...")
+                self._pipeline_tts = KPipeline(lang_code="e")
+                logger.info("Kokoro TTS listo")
+
+            if self.cb_tts:
+                self.cb_tts(hito.marca_tiempo)
+
+            for _, _, audio in self._pipeline_tts(hito.texto_tts, voice="ef_dora"):
+                sd.play(audio, samplerate=24000)
+                sd.wait()
+
         except Exception as error:
             logger.error(f"Error en TTS: {error}")
+        finally:
+            if self.cb_tts:
+                self.cb_tts(None)
