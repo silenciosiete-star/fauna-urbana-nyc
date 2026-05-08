@@ -50,6 +50,8 @@ _ANCHO_STREAM = 960
 _HEATMAP_CAP   = 3.0    # pico post-blur por detección es ~1.8; cap=3 → amarillo a 1 paso, rojo a ~2
 _HEATMAP_DECAY = 0.990  # factor de decay por frame (~50% en 3 s a 25 fps)
 _HEATMAP_RADIO = 20     # radio fijo del punto de calor en píxeles (igual para todos los personajes)
+_TRAIL_LONGITUD = 100   # posiciones por personaje (~4 s a 25 fps)
+_TRAIL_GROSOR   = 3     # grosor máximo de la línea de trayectoria
 _INTERVALO_REFRESCO_MS = 2000
 _VENTANA_FPS = 30
 _COLORES_ZONA = {
@@ -104,6 +106,9 @@ class Panel:
         self._heatmap_activo = False
         self._acum_heatmap: np.ndarray | None = None
         self._lock_heatmap = threading.Lock()
+        self._tracking_activo = False
+        self._trails: dict[int, deque] = {}
+        self._lock_trails = threading.Lock()
         self._app = self._crear_app()
 
     def conectar_simulador(self, simulador: Simulador) -> None:
@@ -286,6 +291,7 @@ class Panel:
                                         ),
                                         html.Button("📊  Modelo", id="btn-modelo", className="btn-control", n_clicks=0),
                                         html.Button("🌡  Calor", id="btn-calor", className="btn-control", n_clicks=0),
+                                        html.Button("🛤  Trayectorias", id="btn-trayectorias", className="btn-control", n_clicks=0),
                                         html.Span(id="msg-captura", className="msg-control"),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
@@ -461,6 +467,18 @@ class Panel:
             if self._heatmap_activo:
                 return "🌡  Calor", "btn-control activo"
             return "🌡  Calor", "btn-control"
+
+        @app.callback(
+            Output("btn-trayectorias", "children"),
+            Output("btn-trayectorias", "className"),
+            Input("btn-trayectorias", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def toggle_trayectorias(_):
+            self._tracking_activo = not self._tracking_activo
+            if self._tracking_activo:
+                return "🛤  Trayectorias", "btn-control activo"
+            return "🛤  Trayectorias", "btn-control"
 
         @app.callback(
             Output("btn-pausa", "children"),
@@ -780,6 +798,17 @@ class Panel:
                     cy = int(by1)  # suelo donde pisa el personaje
                     cv2.circle(self._acum_heatmap, (cx, cy), _HEATMAP_RADIO, 2.0, -1)
 
+        if detecciones is not None and len(detecciones) > 0 and detecciones.tracker_id is not None:
+            with self._lock_trails:
+                for i, tid in enumerate(detecciones.tracker_id):
+                    tid_int = int(tid)
+                    bx0, by0, bx1, by1 = detecciones.xyxy[i]
+                    cx = int((bx0 + bx1) / 2)
+                    cy = int(by1)
+                    if tid_int not in self._trails:
+                        self._trails[tid_int] = deque(maxlen=_TRAIL_LONGITUD)
+                    self._trails[tid_int].append((cx, cy))
+
         if self._heatmap_activo:
             with self._lock_heatmap:
                 acum = self._acum_heatmap.copy() if self._acum_heatmap is not None else None
@@ -788,6 +817,18 @@ class Panel:
                 norm = np.clip(suavizado / _HEATMAP_CAP * 255, 0, 255).astype(np.uint8)
                 coloreado = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
                 frame = cv2.addWeighted(frame, 0.6, coloreado, 0.4, 0)
+
+        if self._tracking_activo:
+            with self._lock_trails:
+                trails_copia = {tid: list(pts) for tid, pts in self._trails.items() if len(pts) >= 2}
+            for tid, pts in trails_copia.items():
+                color = _color_por_id(tid)
+                n = len(pts)
+                for i in range(1, n):
+                    alpha = i / n
+                    color_fade = tuple(int(c * alpha) for c in color)
+                    grosor = max(1, int(_TRAIL_GROSOR * (0.4 + 0.6 * alpha)))
+                    cv2.line(frame, pts[i - 1], pts[i], color_fade, grosor, cv2.LINE_AA)
 
         if detecciones is not None and len(detecciones) > 0:
             nombres_clase = detecciones.data.get("class_name", np.array([]))
@@ -852,6 +893,13 @@ class Panel:
 
 
 # ------------------------------------------------------------------
+
+def _color_por_id(tracker_id: int) -> tuple[int, int, int]:
+    h = (tracker_id * 47) % 180
+    color_hsv = np.uint8([[[h, 220, 220]]])
+    bgr = cv2.cvtColor(color_hsv, cv2.COLOR_HSV2BGR)[0][0]
+    return int(bgr[0]), int(bgr[1]), int(bgr[2])
+
 
 def _cargar_resultados_csv() -> dict[str, list]:
     ruta = _DIR_ENTRENAMIENTO / "results.csv"

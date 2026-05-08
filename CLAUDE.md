@@ -199,7 +199,8 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] **Email vía GAS** — ciclo completo verificado: Gemma confirma hito → email recibido en `78818937f@cifpzonzamas.es`
 - [x] **Bot de Telegram** — `src/bot_telegram.py`: push de hitos con foto + comandos `/donde`, `/cuantos`, `/captura`, `/estado`
 - [x] **Drawer de hito mejorado** — imagen del frame capturado, razonamiento de Gemma, badges de acciones disparadas (email/Telegram/captura)
-- [x] **Mapa de calor** — toggle "🌡 Calor" en el panel; acumulación en el punto inferior central del bbox (suelo donde pisa el personaje), radio fijo para igualar todos los personajes, decay temporal (0.990/frame), colormap JET estilo Ultralytics
+- [x] **Mapa de calor** — toggle "🌡 Calor" en el panel; acumulación en el punto suelo del bbox (cx, by1), radio fijo 20 px para igualar todos los personajes, decay temporal (0.990/frame), normalización por cap fijo, colormap JET; compatible con modo trayectorias activo simultáneamente
+- [x] **Trayectorias** — toggle "🛤 Trayectorias" en el panel; trail por `tracker_id` (deque maxlen=100, ~4 s a 25 fps), dibujado de antiguo→reciente con fade de color y grosor, color único por ID derivado de HSV
 - [ ] Síntesis de voz (TTS)
 - [ ] Docker
 - [ ] **Audio en el panel** ← solución correcta: reemplazar MJPEG por `<video>` HTML5 + `<canvas>` + WebSocket
@@ -221,7 +222,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `notificador.py`: guarda frame, registra en BD, delega Telegram a BotTelegram y TTS
 - [x] `bot_telegram.py`: bot unificado — push de hitos + comandos interactivos
 - [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
-- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle
+- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle, trayectorias por tracker_id con toggle
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
