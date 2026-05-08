@@ -198,8 +198,9 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] Panel: drawer lateral de detalle, desplegable Simular mejorado, feedback "verificando..."
 - [x] **Email vía GAS** — ciclo completo verificado: Gemma confirma hito → email recibido en `78818937f@cifpzonzamas.es`
 - [x] **Bot de Telegram** — `src/bot_telegram.py`: push de hitos con foto + comandos `/donde`, `/cuantos`, `/captura`, `/estado`
+- [x] **Drawer de hito mejorado** — imagen del frame capturado, razonamiento de Gemma, badges de acciones disparadas (email/Telegram/captura)
+- [x] **Mapa de calor** — toggle "🌡 Calor" en el panel; acumulación en el punto inferior central del bbox (suelo donde pisa el personaje), radio fijo para igualar todos los personajes, decay temporal (0.990/frame), colormap JET estilo Ultralytics
 - [ ] Síntesis de voz (TTS)
-- [ ] Mapa de calor
 - [ ] Docker
 - [ ] **Audio en el panel** ← solución correcta: reemplazar MJPEG por `<video>` HTML5 + `<canvas>` + WebSocket
 
@@ -220,7 +221,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `notificador.py`: guarda frame, registra en BD, delega Telegram a BotTelegram y TTS
 - [x] `bot_telegram.py`: bot unificado — push de hitos + comandos interactivos
 - [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
-- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle
+- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar

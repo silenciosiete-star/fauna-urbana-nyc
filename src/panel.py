@@ -47,6 +47,9 @@ _HITOS_SIMULABLES = [
 ]
 
 _ANCHO_STREAM = 960
+_HEATMAP_CAP   = 3.0    # pico post-blur por detección es ~1.8; cap=3 → amarillo a 1 paso, rojo a ~2
+_HEATMAP_DECAY = 0.990  # factor de decay por frame (~50% en 3 s a 25 fps)
+_HEATMAP_RADIO = 20     # radio fijo del punto de calor en píxeles (igual para todos los personajes)
 _INTERVALO_REFRESCO_MS = 2000
 _VENTANA_FPS = 30
 _COLORES_ZONA = {
@@ -98,6 +101,9 @@ class Panel:
         self._tiempos_frame: deque = deque(maxlen=_VENTANA_FPS)
         self._anotador_cajas = sv.BoxAnnotator()
         self._anotador_etiquetas = sv.LabelAnnotator()
+        self._heatmap_activo = False
+        self._acum_heatmap: np.ndarray | None = None
+        self._lock_heatmap = threading.Lock()
         self._app = self._crear_app()
 
     def conectar_simulador(self, simulador: Simulador) -> None:
@@ -279,6 +285,7 @@ class Panel:
                                             ],
                                         ),
                                         html.Button("📊  Modelo", id="btn-modelo", className="btn-control", n_clicks=0),
+                                        html.Button("🌡  Calor", id="btn-calor", className="btn-control", n_clicks=0),
                                         html.Span(id="msg-captura", className="msg-control"),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
@@ -442,6 +449,18 @@ class Panel:
                     ],
                 ))
             return elementos, barra, badge
+
+        @app.callback(
+            Output("btn-calor", "children"),
+            Output("btn-calor", "className"),
+            Input("btn-calor", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def toggle_calor(_):
+            self._heatmap_activo = not self._heatmap_activo
+            if self._heatmap_activo:
+                return "🌡  Calor", "btn-control activo"
+            return "🌡  Calor", "btn-control"
 
         @app.callback(
             Output("btn-pausa", "children"),
@@ -746,6 +765,29 @@ class Panel:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         detecciones = self._ultimo_tracking.detecciones if self._ultimo_tracking is not None else None
+
+        h, w = frame.shape[:2]
+        with self._lock_heatmap:
+            if self._acum_heatmap is not None:
+                self._acum_heatmap *= _HEATMAP_DECAY
+
+        if detecciones is not None and len(detecciones) > 0:
+            with self._lock_heatmap:
+                if self._acum_heatmap is None or self._acum_heatmap.shape != (h, w):
+                    self._acum_heatmap = np.zeros((h, w), dtype=np.float32)
+                for bx0, by0, bx1, by1 in detecciones.xyxy:
+                    cx = int((bx0 + bx1) / 2)
+                    cy = int(by1)  # suelo donde pisa el personaje
+                    cv2.circle(self._acum_heatmap, (cx, cy), _HEATMAP_RADIO, 2.0, -1)
+
+        if self._heatmap_activo:
+            with self._lock_heatmap:
+                acum = self._acum_heatmap.copy() if self._acum_heatmap is not None else None
+            if acum is not None:
+                suavizado = cv2.GaussianBlur(acum, (61, 61), 0)
+                norm = np.clip(suavizado / _HEATMAP_CAP * 255, 0, 255).astype(np.uint8)
+                coloreado = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
+                frame = cv2.addWeighted(frame, 0.6, coloreado, 0.4, 0)
 
         if detecciones is not None and len(detecciones) > 0:
             nombres_clase = detecciones.data.get("class_name", np.array([]))
