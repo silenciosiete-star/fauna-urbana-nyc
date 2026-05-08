@@ -492,7 +492,7 @@ class Panel:
             self._simulador.simular(tipo)
             etiqueta = next((e for t, e in _HITOS_SIMULABLES if t == tipo), tipo)
             logger.info(f"Simulación lanzada: {tipo}")
-            return f"▶ {etiqueta}"
+            return ""
 
         @app.callback(
             Output("hito-seleccionado", "data"),
