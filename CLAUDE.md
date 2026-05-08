@@ -193,5 +193,5 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - **Bot de Telegram**: implementar `src/bot_telegram.py` con comandos `/donde`, `/cuantos`, `/captura`, `/estado`. Requiere `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` en `.env`.
 - **Prueba en vivo (Fase 2)**: stream alternativo `https://www.youtube.com/watch?v=a9J1OP_x5Rg`. El principal (`rnXIjl_Rzy4`) puede estar operativo — comprobar al retomar.
 - **Gemma en producción**: cambiar `GEMMA_PROVEEDOR=ollama` en `.env` para usar Gemma 4 local en `192.168.0.135`. Ya configurado en `config.yaml`.
-- **Dos modelos en `detector.py`**: añadir modelo pretrained COCO para vehículos. Decisión arquitectónica tomada.
+- **Panel de modelo — resultados del entrenamiento**: copiar la carpeta de salida de YOLO (normalmente `runs/detect/train/`) del equipo con RTX 4080 Super a `modelos/fauna_urbana/` en este equipo. El panel espera ahí `results.csv`, `confusion_matrix_normalized.png` y las gráficas de curvas. Sin esos archivos la pestaña Modelo del panel no carga.
 - **mickey_mouse**: recall bajo (0.37) — recolectar más imágenes si falla en producción.
