@@ -17,8 +17,8 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 | Captura del stream | OpenCV + yt-dlp | Hilo independiente para no bloquear la inferencia |
 | Detección y clasificación | YOLO26 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
 | Tracking entre frames | Supervision (ByteTrack) | Interpola posiciones en los frames no analizados |
-| Verificador y narrador | Gemma 4 (Ollama / OpenRouter) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. |
-| Panel web | Dash + Plotly | |
+| Verificador y narrador | Gemma 4 — Google AI Studio (desarrollo) / Ollama local (producción) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. Tool calling para envío de email. |
+| Panel web | Dash + Plotly | Stream en directo, histórico de hitos, simulador integrado |
 | Base de datos | SQLite | |
 | Notificaciones | python-telegram-bot | Alertas y control remoto |
 | Síntesis de voz | pyttsx3 / Coqui TTS | |
@@ -56,19 +56,9 @@ Si Gemma determina que es un falso positivo, el hito no se dispara y queda regis
 
 ## Fine-tuning de YOLO26
 
-Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool, y también mantener la detección de vehículos para la zona de tráfico.
+Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool.
 
-### Estrategia: entrenamiento mixto (personajes + vehículos)
-
-El modelo se entrena con **un único dataset** que combina:
-- Imágenes de personajes disfrazados de Times Square (anotadas a mano)
-- Imágenes de vehículos del dataset COCO (importadas directamente desde Roboflow sin anotar a mano)
-
-Así el modelo resultante detecta personajes Y vehículos, y basta con un solo modelo en el sistema.
-
-Clases objetivo: `gorila` · `spider-man` · `deadpool` · `mickey` · `minnie` · `coche` · `taxi` · `autobus` · `moto`
-
-> **Desequilibrio de clases:** COCO tiene miles de imágenes de vehículos y el dataset de personajes será pequeño. Hay que compensarlo con pesos por clase o sobremuestreo de personajes durante el entrenamiento.
+Clases: `gorila` · `transformer` · `deadpool` · `estatua_libertad` · `sonic` · `spiderman` · `super_mario` · `batman` · `minnie_mouse` · `elmo` · `mickey_mouse`
 
 ### Paso 1 — Recopilar frames (`entrenamiento/recopilar_frames.py`)
 
@@ -91,9 +81,8 @@ python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida da
 
 ### Paso 2 — Etiquetar con Roboflow
 
-- Crear un proyecto en [Roboflow](https://roboflow.com) con las 5 clases: `gorila`, `spider-man`, `deadpool`, `mickey`, `minnie`.
+- Crear un proyecto en [Roboflow](https://roboflow.com) con las 11 clases de personajes.
 - Subir los frames filtrados y etiquetar bounding boxes. Usar el **auto-label** de Roboflow para acelerar — revisa y corrige, no te fíes al 100%.
-- Vehículos: importar directamente desde COCO en Roboflow, ya vienen anotados. Mezclar en el mismo proyecto.
 - Ritmo orientativo: ~150-200 imágenes/hora. Con 500 frames útiles, ~3-4 horas de etiquetado.
 
 ### Paso 3 — Preparar el dataset (`entrenamiento/preparar_dataset.py`)
@@ -106,9 +95,26 @@ python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida da
 
 Fine-tuning de YOLO26 partiendo de los pesos preentrenados de Ultralytics (transfer learning). No se entrena desde cero.
 
-### Paso 5 — Evaluar y sustituir
+### Resultados del entrenamiento
 
-Medir **mAP por clase** sobre el set de test para personajes y vehículos por separado. Si los resultados son aceptables, sustituir el modelo genérico en `config.yaml`.
+Entrenado en RTX 4080 Super · 100 épocas · imgsz=1280 · batch=8.
+
+| Clase | mAP50 | Nota |
+|-------|-------|------|
+| gorila | 0.995 | |
+| transformer | 0.990 | |
+| deadpool | 0.995 | |
+| estatua_libertad | 0.957 | |
+| sonic | 0.911 | |
+| spiderman | 0.910 | |
+| super_mario | 0.900 | |
+| batman | 0.849 | |
+| minnie_mouse | 0.823 | |
+| elmo | 0.765 | |
+| mickey_mouse | 0.580 | Recall bajo (0.37) — confusión con minnie. Mejorable añadiendo más imágenes. |
+| **global** | **0.879** | |
+
+El modelo resultante está en `modelos/fauna_urbana.pt` y es el que usa el sistema por defecto.
 
 ---
 
@@ -155,10 +161,11 @@ El capturador las detecta automáticamente.
 El mínimo presentable y funcional:
 
 - [x] Captura del stream de YouTube en tiempo real
-- [ ] Detección y clasificación de personajes con YOLO fine-tuned *(pendiente fine-tuning — funciona con modelo genérico)*
+- [x] Detección y clasificación de personajes con YOLO fine-tuned (mAP50 global 0.879)
 - [x] Conteo por personaje con visualización sobre el frame
 - [x] Al menos 2 zonas configurables por YAML
-- [x] 5 hitos implementados con guardado de frame + notificación Telegram
+- [x] 5 hitos implementados con guardado de frame + notificación por email (Google Apps Script)
+- [ ] Notificación Telegram al disparar hito
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
 - [x] Tracking de trayectorias con Supervision
 - [x] **Pruebas de integración con stream real** — superadas
@@ -168,12 +175,14 @@ El mínimo presentable y funcional:
 
 ## Extras — Mejoras una vez el MVP funciona
 
-- [ ] Panel web con histórico y gráficas temporales (Dash + Plotly)
+- [x] Panel web con stream en directo, histórico y gráficas temporales (Dash + Plotly)
+- [x] Simulador de hitos — inyecta frames del dataset para probar el pipeline sin necesidad del stream real
+- [x] Panel de información de reentrenamiento del modelo — métricas, curvas y resultados por clase
+- [ ] Despliegue web (Docker)
 - [ ] Bot de Telegram interactivo con comandos (`/donde gorila`, `/cuantos ahora`, `/captura`)
 - [ ] Síntesis de voz (TTS) anunciando los eventos por altavoz
 - [ ] Mapa de calor de zonas con más actividad
 - [ ] Zonas dibujables en tiempo real (en lugar de solo por config)
-- [ ] Despliegue en Docker
 
 ---
 
@@ -208,11 +217,17 @@ fauna-urbana-nyc/
 │   ├── verificador.py       # Gemma 4 asíncrono: confirma hito y genera mensaje jocoso
 │   ├── base_datos.py        # Registro en SQLite (incluye razonamiento de Gemma)
 │   ├── notificador.py       # Telegram, TTS — despacha el mensaje generado por Gemma
-│   └── panel.py             # Dashboard web (Dash)
+│   ├── simulador.py         # Simula hitos inyectando frames del dataset
+│   └── panel.py             # Dashboard web (Dash): stream, hitos, simulador, métricas
 ├── entrenamiento/
 │   ├── recopilar_frames.py  # Extrae frames del stream para el dataset
 │   ├── preparar_dataset.py  # Conversión y splits train/val/test
 │   └── entrenar.py          # Fine-tuning de YOLO26
+├── tools/
+│   └── analizar_simulaciones.py  # Análisis de resultados de simulaciones
+├── assets/
+│   ├── estilo.css           # Estilos del panel web
+│   └── simulaciones/        # Frames y textos de ejemplo para el simulador
 ├── capturas/                # Frames guardados al dispararse un hito
 └── principal.py             # Punto de entrada
 ```
