@@ -216,3 +216,58 @@ body { margin: 0; background: #07070f; color: #e0e0f0; font-family: 'Inter', san
     0%, 100% { opacity: 1;   transform: scale(1); }
     50%       { opacity: 0.4; transform: scale(0.85); }
 }
+
+/* ── Icono de información con tooltip ───────────────── */
+
+.info-icono {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(0, 188, 212, 0.10);
+    border: 1px solid rgba(0, 188, 212, 0.28);
+    color: #008ba3;
+    font-size: 9px;
+    font-style: italic;
+    font-weight: bold;
+    font-family: Georgia, serif;
+    cursor: help;
+    margin-left: 8px;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+.info-icono .info-popup {
+    display: none;
+    position: absolute;
+    top: 18px;
+    left: 0;
+    width: 270px;
+    background: #12122a;
+    border: 1px solid #2e2e50;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #a0a0c8;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: normal;
+    font-family: 'Inter', sans-serif;
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.6;
+    z-index: 9999;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75);
+    pointer-events: none;
+}
+
+.info-icono:hover .info-popup {
+    display: block;
+}
+
+.info-icono--izquierda .info-popup {
+    left: auto;
+    right: 0;
+}

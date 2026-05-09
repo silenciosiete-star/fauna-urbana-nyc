@@ -10,12 +10,14 @@ modelo:
   confianza_minima: 0.20
 
 gemma:
-  # Proveedor activo: "huggingface" (desarrollo) o "ollama" (producción red local)
-  # Las credenciales y la URL van en .env
+  # Proveedor activo: cambiar con GEMMA_PROVEEDOR en .env
+  #   "google"  → desarrollo: Gemini 2.5 Flash (Google AI Studio, requiere GEMINI_API_KEY)
+  #              Nota: Gemma 4 NO soporta tool calling vía Google AI Studio — se usa Gemini 2.5 Flash.
+  #   "ollama"  → producción: Gemma 4 local en 192.168.0.135 (sí soporta tool calling)
   proveedor: "google"
-  modelo_nombre: "google/gemma-4-4B-it"        # HuggingFace Inference API
-  gemini_modelo: "models/gemma-4-26b-a4b-it"  # Google AI Studio
-  ollama_modelo: "gemma4:latest"          # Nombre del modelo en Ollama local
+  modelo_nombre: "google/gemma-4-4B-it"    # HuggingFace Inference API (no usado actualmente)
+  gemini_modelo: "gemini-2.5-flash"        # Google AI Studio — Gemma 4 no soporta tool calling aquí
+  ollama_modelo: "gemma4:latest"           # Ollama local — soporta tool calling
   timeout_segundos: 40  # Tiempo máximo de espera antes de descartar la verificación
   clases:
     0: "batman"
@@ -58,7 +60,7 @@ hitos:
 
   hora_punta:
     activo: true
-    personajes_minimos: 7
+    personajes_minimos: 6
     zona: null
     cooldown_segundos: 300
 

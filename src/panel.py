@@ -109,7 +109,7 @@ class Panel:
         self._tracking_activo = False
         self._trails: dict[int, deque] = {}
         self._lock_trails = threading.Lock()
-        self._hito_reproduciendo: float | None = None
+        self._notificador = None
         self._app = self._crear_app()
 
     def conectar_simulador(self, simulador: Simulador) -> None:
@@ -119,8 +119,8 @@ class Panel:
     def conectar_verificador(self, verificador: Verificador) -> None:
         self._verificador = verificador
 
-    def set_reproduciendo(self, marca_tiempo: float | None) -> None:
-        self._hito_reproduciendo = marca_tiempo
+    def conectar_notificador(self, notificador) -> None:
+        self._notificador = notificador
 
     def iniciar(self) -> None:
         self._activo = True
@@ -218,6 +218,11 @@ class Panel:
             from flask import send_from_directory
             return send_from_directory(str(self._carpeta_capturas.resolve()), nombre)
 
+        @app.server.route("/audio/<nombre>")
+        def servir_audio(nombre):
+            from flask import send_from_directory
+            return send_from_directory(str(self._carpeta_capturas.resolve()), nombre)
+
         _estilo_drawer_base = {
             "position": "fixed", "top": 0, "width": "380px", "height": "100vh",
             "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
@@ -232,6 +237,9 @@ class Panel:
                 dcc.Store(id="hito-seleccionado"),
                 dcc.Store(id="menu-abierto", data=False),
                 dcc.Store(id="menu-posicion", data="abajo"),
+                dcc.Store(id="audio-url-hito", data=None),
+                dcc.Store(id="cola-audio-nuevos", data=[]),
+                html.Audio(id="audio-tts", style={"display": "none"}, preload="auto"),
                 # ── Header ──────────────────────────────────────────
                 html.Div(
                     style={"display": "flex", "alignItems": "center", "justifyContent": "space-between", "marginBottom": "20px"},
@@ -306,7 +314,18 @@ class Panel:
                         html.Div(
                             style={"flex": "1"},
                             children=[
-                                html.Div("Hitos recientes", className="seccion-titulo"),
+                                html.Div(
+                                    style={"display": "flex", "alignItems": "center", "marginBottom": "0"},
+                                    children=[
+                                        html.Div("Hitos recientes", className="seccion-titulo",
+                                                 style={"marginBottom": "0", "flex": "1"}),
+                                        html.Button("🔊", id="btn-audio-auto", n_clicks=0,
+                                                    style={"background": "none", "border": "none",
+                                                           "cursor": "pointer", "fontSize": "1.1em",
+                                                           "opacity": "1", "padding": "0 4px",
+                                                           "lineHeight": "1", "title": "Audio automático"}),
+                                    ],
+                                ),
                                 html.Div(id="lista-hitos", style={"overflowY": "auto", "maxHeight": "460px"}),
                             ],
                         ),
@@ -333,6 +352,15 @@ class Panel:
                     children=[
                         html.Div(id="cajita-detalle-titulo", style={"marginBottom": "16px"}),
                         html.Div(id="cajita-detalle-cuerpo"),
+                        html.Button(
+                            "🔊 Leer",
+                            id="btn-leer-voz",
+                            n_clicks=0,
+                            style={"display": "none", "marginTop": "12px", "width": "100%",
+                                   "padding": "8px", "background": "#7c4dff22",
+                                   "border": "1px solid #7c4dff66", "borderRadius": "6px",
+                                   "color": "#b39ddb", "cursor": "pointer", "fontSize": "0.85em"},
+                        ),
                     ],
                 ),
                 # ── Backdrop modelo ──────────────────────────────────
@@ -411,28 +439,34 @@ class Panel:
             else:
                 badge = [html.Div(className="live-dot"), "LIVE"]
             elementos = []
+
+            def _tarjeta_proceso(p: dict, etiqueta: str) -> html.Div:
+                color = _COLORES_HITO.get(p["tipo"], _COLOR_HITO_DEFAULT)
+                return html.Div(
+                    className="hito-card",
+                    style={"borderLeftColor": color, "opacity": "0.75"},
+                    children=[
+                        html.Div(
+                            style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                            children=[
+                                html.Span("⏳", style={"fontSize": "0.9em"}),
+                                html.Span(p["tipo"].replace("_", " ").upper(),
+                                          className="hito-tipo", style={"color": color}),
+                                html.Span(etiqueta,
+                                          style={"marginLeft": "auto", "fontSize": "0.72em",
+                                                 "color": "#888", "fontStyle": "italic"}),
+                            ],
+                        ),
+                        html.Div(p.get("descripcion", ""), className="hito-mensaje"),
+                    ],
+                )
+
+            if self._notificador:
+                for p in self._notificador.hitos_preparando():
+                    elementos.append(_tarjeta_proceso(p, "notificando..."))
             if self._verificador:
                 for p in self._verificador.hitos_en_proceso():
-                    color = _COLORES_HITO.get(p["tipo"], _COLOR_HITO_DEFAULT)
-                    elementos.append(html.Div(
-                        className="hito-card",
-                        style={"borderLeftColor": color, "opacity": "0.75"},
-                        children=[
-                            html.Div(
-                                style={"display": "flex", "alignItems": "center", "gap": "8px"},
-                                children=[
-                                    html.Span("⏳", style={"fontSize": "0.9em"}),
-                                    html.Span(p["tipo"].replace("_", " ").upper(),
-                                              className="hito-tipo",
-                                              style={"color": color}),
-                                    html.Span("verificando...",
-                                              style={"marginLeft": "auto", "fontSize": "0.72em",
-                                                     "color": "#888", "fontStyle": "italic"}),
-                                ],
-                            ),
-                            html.Div(p["descripcion"], className="hito-mensaje"),
-                        ],
-                    ))
+                    elementos.append(_tarjeta_proceso(p, "verificando..."))
             if not hitos and not elementos:
                 return html.P("Sin hitos registrados aún.", style={"color": "#404060", "fontSize": "0.85em"}), barra, badge
             for h in hitos[:30]:
@@ -440,15 +474,7 @@ class Panel:
                 color_borde = _COLORES_HITO.get(h["tipo"], _COLOR_HITO_DEFAULT)
                 color_estado = "#00e676" if h["confirmado"] else "#ff5252"
                 estado_txt = "✓" if h["confirmado"] else "✗"
-                sonando = (
-                    self._hito_reproduciendo is not None
-                    and abs(h["marca_tiempo"] - self._hito_reproduciendo) < 1.0
-                )
-                icono_audio = [html.Span(
-                    "🔊",
-                    style={"fontSize": "0.85em", "marginLeft": "6px",
-                           "animation": "pulso-audio 0.8s ease-in-out infinite"},
-                )] if sonando else []
+                icono_audio = []
                 elementos.append(html.Div(
                     id={"type": "hito-card", "index": h["id"]},
                     className="hito-card hito-card-clickable",
@@ -493,6 +519,24 @@ class Panel:
             if self._tracking_activo:
                 return "🛤  Trayectorias", "btn-control activo"
             return "🛤  Trayectorias", "btn-control"
+
+        app.clientside_callback(
+            """
+            function(n_clicks) {
+                var activo = (window._ttsAutoplay !== false);
+                if (n_clicks) {
+                    window._ttsAutoplay = !activo;
+                    activo = window._ttsAutoplay;
+                }
+                return [activo ? '🔊' : '🔇', {'background': 'none', 'border': 'none',
+                    'cursor': 'pointer', 'fontSize': '1.1em', 'padding': '0 4px', 'lineHeight': '1'}];
+            }
+            """,
+            Output("btn-audio-auto", "children"),
+            Output("btn-audio-auto", "style"),
+            Input("btn-audio-auto", "n_clicks"),
+            prevent_initial_call=False,
+        )
 
         @app.callback(
             Output("btn-pausa", "children"),
@@ -617,6 +661,8 @@ class Panel:
             Output("cajita-detalle-titulo", "children"),
             Output("cajita-detalle-cuerpo", "children"),
             Output("drawer-backdrop", "style"),
+            Output("btn-leer-voz", "style"),
+            Output("audio-url-hito", "data"),
             Input("hito-seleccionado", "data"),
         )
         def mostrar_detalle(data):
@@ -630,8 +676,15 @@ class Panel:
             backdrop_oculto = {"display": "none", "position": "fixed", "top": 0, "left": 0,
                                "width": "100vw", "height": "100vh", "zIndex": 999}
             backdrop_visible = {**backdrop_oculto, "display": "block"}
+            _btn_leer_oculto = {"display": "none"}
+            _btn_leer_visible = {
+                "display": "block", "marginTop": "12px", "width": "100%",
+                "padding": "8px", "background": "#7c4dff22",
+                "border": "1px solid #7c4dff66", "borderRadius": "6px",
+                "color": "#b39ddb", "cursor": "pointer", "fontSize": "0.85em",
+            }
             if not data:
-                return {**estilo_base, "right": "-400px"}, [], [], backdrop_oculto
+                return {**estilo_base, "right": "-400px"}, [], [], backdrop_oculto, _btn_leer_oculto, None
             color = _COLORES_HITO.get(data["tipo"], _COLOR_HITO_DEFAULT)
             confirmado = data["confirmado"]
 
@@ -742,7 +795,118 @@ class Panel:
                     ),
                 ]))
 
-            return {**estilo_base, "right": "0px"}, titulo, cuerpo, backdrop_visible
+            acciones_lista = [a for a in (data.get("acciones") or "").split(",") if a]
+            audio_url_hito = (
+                f"/audio/audio_{int(data['marca_tiempo'] * 1000)}.wav"
+                if confirmado and "voz" in acciones_lista else None
+            )
+            btn_leer_style = _btn_leer_visible if audio_url_hito else _btn_leer_oculto
+            return {**estilo_base, "right": "0px"}, titulo, cuerpo, backdrop_visible, btn_leer_style, audio_url_hito
+
+        # Botón "Leer": reproduce el audio del hito abierto (gesto de usuario → autoplay permitido).
+        # Toggle: si ya suena, lo para; si no, lo inicia.
+        app.clientside_callback(
+            """
+            function(n_clicks, audio_url) {
+                if (!n_clicks || !audio_url) return window.dash_clientside.no_update;
+                var audio = document.getElementById('audio-tts');
+                var btn   = document.getElementById('btn-leer-voz');
+                if (!audio || !btn) return window.dash_clientside.no_update;
+                if (!audio.paused) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    btn.textContent = '🔊 Leer';
+                    window._ttsTs = null;
+                    return window.dash_clientside.no_update;
+                }
+                audio.src = audio_url + '?cb2=' + Date.now();
+                btn.textContent = '⏳ Reproduciendo...';
+                audio.addEventListener('canplay', function() {
+                    audio.play().catch(function() {
+                        btn.textContent = '🔊 Leer';
+                        window._ttsTs = null;
+                    });
+                }, { once: true });
+                audio.addEventListener('ended', function() {
+                    btn.textContent = '🔊 Leer';
+                    window._ttsTs = null;
+                }, { once: true });
+                audio.load();
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output("btn-leer-voz", "children"),
+            Input("btn-leer-voz", "n_clicks"),
+            State("audio-url-hito", "data"),
+            prevent_initial_call=True,
+        )
+
+        @app.callback(
+            Output("cola-audio-nuevos", "data"),
+            Input("intervalo", "n_intervals"),
+            prevent_initial_call=True,
+        )
+        def actualizar_cola_audio(_):
+            from dash import no_update
+            if not self._notificador:
+                return no_update
+            nuevos = self._notificador.vaciar_cola_audio()
+            if not nuevos:
+                return no_update
+            return [f"/audio/{n}" for n in nuevos]
+
+        # Cola de reproducción automática.
+        # Input: nuevas URLs del servidor. Output: audio-tts.src (sin conflicto).
+        # window._ttsPlayNext se define una sola vez y es reutilizable desde el evento ended.
+        app.clientside_callback(
+            """
+            function(nuevas_urls) {
+                if (!window._audioQueue) window._audioQueue = [];
+
+                if (!window._ttsPlayNext) {
+                    window._ttsPlayNext = function() {
+                        var audio = document.getElementById('audio-tts');
+                        if (!audio || audio._ttsPlaying) return;
+                        if (window._ttsAutoplay === false) return;
+                        if (window._audioQueue.length === 0) return;
+                        var url = window._audioQueue.shift();
+                        var m = url.match(/audio_(\\d+)\\.wav/);
+                        window._ttsTs = m ? parseInt(m[1]) / 1000.0 : null;
+                        audio._ttsPlaying = true;
+                        audio.src = url + '?cb=' + Date.now();
+                        audio.addEventListener('canplay', function() {
+                            audio.play().catch(function() {
+                                audio._ttsPlaying = false;
+                                window._ttsTs = null;
+                                window._ttsPlayNext();
+                            });
+                        }, { once: true });
+                        audio.addEventListener('ended', function() {
+                            audio._ttsPlaying = false;
+                            window._ttsTs = null;
+                            window._ttsPlayNext();
+                        }, { once: true });
+                        audio.addEventListener('error', function() {
+                            audio._ttsPlaying = false;
+                            window._ttsTs = null;
+                            window._ttsPlayNext();
+                        }, { once: true });
+                        audio.load();
+                    };
+                }
+
+                if (nuevas_urls && nuevas_urls.length > 0) {
+                    nuevas_urls.forEach(function(url) { window._audioQueue.push(url); });
+                    window._ttsPlayNext();
+                }
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output("audio-tts", "src"),
+            Input("cola-audio-nuevos", "data"),
+            prevent_initial_call=True,
+        )
+
 
         _estilo_modelo_base = {
             "position": "fixed", "top": 0, "width": "780px", "height": "100vh",
@@ -944,7 +1108,7 @@ def _construir_contenido_modelo() -> list:
 
     _estilo_grafica = dict(
         paper_bgcolor="#0d0d1a", plot_bgcolor="#13132a",
-        margin=dict(l=42, r=10, t=28, b=28),
+        margin=dict(l=42, r=10, t=10, b=28),
         font=dict(color="#c0c0e0", size=10),
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9), orientation="h",
                     yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -962,8 +1126,7 @@ def _construir_contenido_modelo() -> list:
     fig_metricas.add_trace(go.Scatter(
         x=epocas, y=datos.get("metrics/recall(B)", []),
         name="Recall", line=dict(color="#f44336", width=1.5, dash="dot")))
-    fig_metricas.update_layout(**_estilo_grafica,
-                               title=dict(text="Métricas por época", font=dict(size=11)))
+    fig_metricas.update_layout(**_estilo_grafica)
     fig_metricas.update_yaxes(range=[0, 1.05])
 
     fig_losses = go.Figure()
@@ -979,8 +1142,7 @@ def _construir_contenido_modelo() -> list:
     fig_losses.add_trace(go.Scatter(
         x=epocas, y=datos.get("val/box_loss", []),
         name="box val", line=dict(color="#e040fb", width=1.5, dash="dot")))
-    fig_losses.update_layout(**_estilo_grafica,
-                             title=dict(text="Pérdidas train vs val", font=dict(size=11)))
+    fig_losses.update_layout(**_estilo_grafica)
 
     clases_ord = sorted(_MAP50_POR_CLASE.items(), key=lambda x: x[1])
     nombres_c = [c for c, _ in clases_ord]
@@ -994,16 +1156,33 @@ def _construir_contenido_modelo() -> list:
         textposition="outside",
         textfont=dict(size=9, color="#c0c0e0"),
     ))
-    fig_clases.update_layout(**_estilo_grafica,
-                             title=dict(text="mAP50 por clase", font=dict(size=11)),
-                             height=290)
-    fig_clases.update_layout(margin=dict(l=110, r=40, t=28, b=28))
+    fig_clases.update_layout(**_estilo_grafica, height=290)
+    fig_clases.update_layout(margin=dict(l=110, r=40, t=10, b=28))
     fig_clases.update_xaxes(range=[0, 1.08])
 
-    _s_label = {"fontSize": "0.62em", "color": "#666", "textTransform": "uppercase",
-                "letterSpacing": "0.07em", "marginBottom": "2px"}
-    _s_seccion = {"fontSize": "0.68em", "color": "#555", "textTransform": "uppercase",
-                  "letterSpacing": "0.08em", "marginBottom": "8px"}
+    _ayuda_metricas = (
+        "mAP50 (verde): fracción de instancias detectadas correctamente con IoU ≥ 0.5. "
+        "Es el indicador principal del entrenamiento.\n"
+        "Precisión (naranja): detecciones correctas / total de detecciones realizadas.\n"
+        "Recall (rojo): objetos detectados / total de objetos reales presentes."
+    )
+    _ayuda_losses = (
+        "Sólido = entrenamiento · Punteado = validación.\n"
+        "cls: pérdida de clasificación (¿qué personaje es?).\n"
+        "box: pérdida de localización (¿dónde está exactamente?).\n"
+        "Si train y val divergen mucho → sobreajuste."
+    )
+    _ayuda_clases = (
+        "mAP50 por clase sobre el set de test (93 imágenes).\n"
+        "Verde ≥ 0.90 · Naranja ≥ 0.75 · Rojo < 0.75.\n"
+        "Un valor bajo indica confusión con otras clases o pocas imágenes de entrenamiento."
+    )
+    _ayuda_matriz = (
+        "Cada fila = clase real · Cada columna = clase predicha.\n"
+        "La diagonal perfecta sería 1.0 en todas las celdas.\n"
+        "bkg FP: fondo predicho como personaje (falsa alarma).\n"
+        "bkg FN: personaje presente no detectado (pérdida)."
+    )
 
     return [
         html.Hr(style={"borderColor": "#2a2a3e", "margin": "0 0 12px 0"}),
@@ -1030,19 +1209,88 @@ def _construir_contenido_modelo() -> list:
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px",
                    "marginBottom": "14px"},
             children=[
-                dcc.Graph(figure=fig_metricas, config={"displayModeBar": False},
-                          style={"height": "240px"}),
-                dcc.Graph(figure=fig_losses, config={"displayModeBar": False},
-                          style={"height": "240px"}),
+                html.Div([
+                    _encabezado_seccion_modelo("Métricas por época", _ayuda_metricas),
+                    dcc.Graph(figure=fig_metricas, config={"displayModeBar": False},
+                              style={"height": "240px"}),
+                ]),
+                html.Div([
+                    _encabezado_seccion_modelo("Pérdidas train vs val", _ayuda_losses, izquierda=True),
+                    dcc.Graph(figure=fig_losses, config={"displayModeBar": False},
+                              style={"height": "240px"}),
+                ]),
             ],
         ),
+        _encabezado_seccion_modelo("mAP50 por clase", _ayuda_clases),
         dcc.Graph(figure=fig_clases, config={"displayModeBar": False},
                   style={"height": "300px", "marginBottom": "16px"}),
-        html.Div("Matriz de confusión normalizada", style=_s_seccion),
+        _encabezado_seccion_modelo("Matriz de confusión normalizada", _ayuda_matriz),
         html.Img(src="/modelo-img/confusion_matrix_normalized.png",
                  style={"width": "100%", "borderRadius": "4px",
-                        "border": "1px solid #2a2a3e"}),
+                        "border": "1px solid #2a2a3e", "marginBottom": "14px"}),
+        _conclusiones_modelo(),
     ]
+
+
+def _encabezado_seccion_modelo(titulo: str, ayuda: str, izquierda: bool = False) -> html.Div:
+    clase = "info-icono info-icono--izquierda" if izquierda else "info-icono"
+    return html.Div(
+        style={"display": "flex", "alignItems": "center", "marginBottom": "6px"},
+        children=[
+            html.Span(titulo, style={
+                "fontSize": "0.68em", "color": "#555",
+                "textTransform": "uppercase", "letterSpacing": "0.08em",
+            }),
+            html.Span(
+                ["i", html.Span(ayuda, className="info-popup")],
+                className=clase,
+            ),
+        ],
+    )
+
+
+def _conclusion_item(icono: str, color: str, texto: str) -> html.Div:
+    return html.Div(
+        style={"display": "flex", "gap": "8px", "marginBottom": "8px",
+               "alignItems": "flex-start"},
+        children=[
+            html.Span(icono, style={"color": color, "fontSize": "0.78em",
+                                    "fontWeight": "700", "flexShrink": "0",
+                                    "marginTop": "1px"}),
+            html.Span(texto, style={"fontSize": "0.72em", "color": "#7070a0",
+                                    "lineHeight": "1.5"}),
+        ],
+    )
+
+
+def _conclusiones_modelo() -> html.Div:
+    return html.Div(
+        style={"background": "#10101f", "borderRadius": "6px",
+               "border": "1px solid #1a1a32", "padding": "12px 14px"},
+        children=[
+            html.Div("Conclusiones del modelo", style={
+                "fontSize": "0.65em", "color": "#555", "textTransform": "uppercase",
+                "letterSpacing": "0.08em", "marginBottom": "10px",
+            }),
+            _conclusion_item("✓", "#00e676",
+                "Gorila, Deadpool y Transformer superan mAP50 = 0.99. Sin ambigüedad "
+                "en producción con estas clases."),
+            _conclusion_item("✓", "#00e676",
+                "Estatua de la Libertad, Sonic y Spider-Man por encima de 0.91 — "
+                "detección sólida en condiciones reales."),
+            _conclusion_item("⚠", "#ff9800",
+                "Batman (0.849) y Minnie Mouse (0.823) con algo más de error, "
+                "probablemente por variación de iluminación y pocas muestras "
+                "representativas en el dataset."),
+            _conclusion_item("✗", "#f44336",
+                "Mickey Mouse es la clase más débil (mAP50 0.58, recall 0.37): "
+                "alta confusión con Minnie por similitud de orejas. Mejorable "
+                "añadiendo más imágenes de Mickey con traje rojo visible."),
+            _conclusion_item("→", "#7070c0",
+                "Sin sobreajuste visible: train y val convergen en las curvas de "
+                "pérdida. El modelo generaliza bien con solo 499 imágenes."),
+        ],
+    )
 
 
 def _mini_card(etiqueta: str, valor: str, color: str) -> html.Div:

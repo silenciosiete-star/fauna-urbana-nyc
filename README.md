@@ -20,8 +20,8 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 | Verificador y narrador | Gemma 4 — Google AI Studio (desarrollo) / Ollama local (producción) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. Tool calling para envío de email. |
 | Panel web | Dash + Plotly | Stream en directo, histórico de hitos, simulador integrado |
 | Base de datos | SQLite | |
-| Notificaciones | python-telegram-bot | Alertas y control remoto |
-| Síntesis de voz | pyttsx3 / Coqui TTS | |
+| Notificaciones | python-telegram-bot | Push de hitos con foto + comandos `/donde`, `/cuantos`, `/captura`, `/estado` |
+| Síntesis de voz | Kokoro TTS 82M (hexgrad/Kokoro-82M) | Voz `ef_dora` (español). Cola automática en el panel con toggle 🔊/🔇 |
 | Visualización en directo | OpenCV | Ventana con bboxes, IDs de tracking y límites de zona |
 | Configuración | YAML | Zonas, hitos y umbrales sin tocar código |
 
@@ -165,7 +165,7 @@ El mínimo presentable y funcional:
 - [x] Conteo por personaje con visualización sobre el frame
 - [x] Al menos 2 zonas configurables por YAML
 - [x] 5 hitos implementados con guardado de frame + notificación por email (Google Apps Script)
-- [ ] Notificación Telegram al disparar hito
+- [x] Notificación Telegram al disparar hito (push con foto + comandos interactivos)
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
 - [x] Tracking de trayectorias con Supervision
 - [x] **Pruebas de integración con stream real** — superadas
@@ -178,11 +178,13 @@ El mínimo presentable y funcional:
 - [x] Panel web con stream en directo, histórico y gráficas temporales (Dash + Plotly)
 - [x] Simulador de hitos — inyecta frames del dataset para probar el pipeline sin necesidad del stream real
 - [x] Panel de información de reentrenamiento del modelo — métricas, curvas y resultados por clase
+- [x] Bot de Telegram — push automático de hitos con foto + comandos interactivos (`/donde`, `/cuantos`, `/captura`, `/estado`)
+- [x] Síntesis de voz con Kokoro TTS — cola automática en el panel, botón manual en el drawer, toggle 🔊/🔇
+- [x] Mapa de calor — acumulación con decay temporal, colormap JET, toggle en el panel
+- [x] Trayectorias por personaje — trail con fade y color único por ID, toggle en el panel
+- [x] Verificación paralela de hitos — múltiples hitos verificados simultáneamente con ThreadPoolExecutor
+- [x] Panel de modelo mejorado — tooltips ℹ en cada gráfica con explicación de elementos, bloque de conclusiones con valoración por clase en la matriz de confusión
 - [ ] Despliegue web (Docker)
-- [ ] Bot de Telegram interactivo con comandos (`/donde gorila`, `/cuantos ahora`, `/captura`)
-- [ ] Síntesis de voz (TTS) anunciando los eventos por altavoz
-- [ ] Mapa de calor de zonas con más actividad
-- [ ] Zonas dibujables en tiempo real (en lugar de solo por config)
 
 ---
 
@@ -207,7 +209,9 @@ fauna-urbana-nyc/
 ├── config/
 │   └── config.yaml          # Zonas, hitos, umbrales, URL del stream
 ├── datos/                   # Frames recopilados y dataset etiquetado
-├── modelos/                 # Pesos del modelo fine-tuned
+├── modelos/
+│   ├── fauna_urbana.pt      # Pesos del modelo fine-tuned
+│   └── fauna_urbana/        # Artefactos del entrenamiento (curvas, matriz, CSV)
 ├── src/
 │   ├── captura.py           # Lectura del stream (hilo independiente)
 │   ├── detector.py          # Inferencia YOLO cada N frames
@@ -227,6 +231,7 @@ fauna-urbana-nyc/
 │   └── analizar_simulaciones.py  # Análisis de resultados de simulaciones
 ├── assets/
 │   ├── estilo.css           # Estilos del panel web
+│   ├── audio.js             # Desbloqueo de autoplay en primer click del usuario
 │   └── simulaciones/        # Frames y textos de ejemplo para el simulador
 ├── capturas/                # Frames guardados al dispararse un hito
 └── principal.py             # Punto de entrada

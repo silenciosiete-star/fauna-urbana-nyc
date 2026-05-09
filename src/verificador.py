@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import time
 
@@ -41,6 +42,24 @@ _HERRAMIENTA_VOZ = {
     },
 }
 
+_HERRAMIENTA_DESCARTAR = {
+    "type": "function",
+    "function": {
+        "name": "descartar_hito",
+        "description": "Descarta el hito porque la condición no se cumple visualmente.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "razon": {
+                    "type": "string",
+                    "description": "Explicación breve de por qué la condición no se cumple",
+                },
+            },
+            "required": ["razon"],
+        },
+    },
+}
+
 _HERRAMIENTA_EMAIL = {
     "type": "function",
     "function": {
@@ -49,6 +68,10 @@ _HERRAMIENTA_EMAIL = {
         "parameters": {
             "type": "object",
             "properties": {
+                "razonamiento": {
+                    "type": "string",
+                    "description": "1-2 frases describiendo lo que ves en la imagen y por qué la condición se cumple",
+                },
                 "asunto": {
                     "type": "string",
                     "description": "Asunto conciso del email (sin emojis)",
@@ -58,27 +81,28 @@ _HERRAMIENTA_EMAIL = {
                     "description": "Cuerpo del email: máximo 2 frases con tono jocoso describiendo el hito",
                 },
             },
-            "required": ["asunto", "cuerpo"],
+            "required": ["razonamiento", "asunto", "cuerpo"],
         },
     },
 }
 
 _CONTEXTO = (
-    "Vigilas una cámara fija de Times Square. El sistema YOLO rastrea personajes disfrazados "
-    "de calle: spiderman, deadpool, batman, mickey_mouse, minnie_mouse, sonic, super_mario, "
-    "elmo, estatua_libertad (persona con disfraz), gorila (traje de gorila), transformer. "
-    "YOLO ya los ha localizado con bounding boxes — tú solo confirmas o descartas visualmente."
+    "Vigilas una cámara fija de Times Square. YOLO detecta personajes disfrazados: "
+    "spiderman, deadpool, batman, mickey_mouse, minnie_mouse, sonic, super_mario, "
+    "elmo, estatua_libertad, gorila, transformer. "
+    "La imagen que recibes tiene los bounding boxes de YOLO ya dibujados con sus etiquetas."
 )
 
 _PROMPT_PLANTILLA = (
     "{contexto}\n\n"
     "YOLO ha disparado el hito «{tipo}»: {descripcion}.\n"
-    "Objetos que YOLO tiene localizados en este frame: {detecciones_str}.\n"
-    "La imagen muestra el frame anotado con sus bounding boxes.\n\n"
-    "¿Lo confirmas visualmente? Escribe en 1-2 frases qué ves en la imagen y si la condición se cumple. Luego:\n"
-    "• Si la condición se cumple → llama a enviar_email (asunto conciso, cuerpo jocoso ≤ 2 frases) "
-    "y también a sintetizar_voz con el mismo texto jocoso en español.\n"
-    "• Si no se cumple → escribe al final: FALSO_POSITIVO"
+    "Clases detectadas en este frame: {detecciones_str}.\n\n"
+    "Mira los bounding boxes en la imagen y verifica que la condición del hito se cumple. "
+    "Solo descarta si los boxes claramente no corresponden a lo que dice la etiqueta "
+    "(ej: el box etiquetado 'gorila' está sobre un objeto inanimado, no una persona).\n"
+    "• Si la condición SE CUMPLE → llama a enviar_email (razonamiento breve de lo que ves "
+    "en los boxes, asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
+    "• Si NO se cumple → llama a descartar_hito con la razón concreta."
 )
 
 
@@ -195,6 +219,7 @@ class Verificador:
         self._tts_activo = config_notificaciones.get("tts", {}).get("activo", False)
         self._activo = False
         self._hilo: threading.Thread | None = None
+        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="verificador")
         self._en_proceso: list[dict] = []
         self._lock_proceso = threading.Lock()
 
@@ -210,6 +235,7 @@ class Verificador:
 
     def detener(self) -> None:
         self._activo = False
+        self._executor.shutdown(wait=False)
         if self._hilo:
             self._hilo.join(timeout=15)
         logger.info("Verificador detenido")
@@ -222,26 +248,22 @@ class Verificador:
                 hito: HitoPotencial = self.cola_entrada.get(timeout=1)
             except queue.Empty:
                 continue
+            self._executor.submit(self._verificar_y_encolar, hito)
 
-            try:
-                verificado = self._verificar(hito)
-            except Exception as error:
-                logger.error(f"Error verificando hito '{hito.tipo}': {error}")
-                verificado = HitoVerificado(
-                    tipo=hito.tipo,
-                    frame=hito.frame,
-                    descripcion=hito.descripcion,
-                    confirmado=False,
-                    razonamiento=f"Error de verificación: {error}",
-                    mensaje=None,
-                )
-
-            if self.cola_salida.full():
-                try:
-                    self.cola_salida.get_nowait()
-                except queue.Empty:
-                    pass
-            self.cola_salida.put(verificado)
+    def _verificar_y_encolar(self, hito: HitoPotencial) -> None:
+        try:
+            verificado = self._verificar(hito)
+        except Exception as error:
+            logger.error(f"Error verificando hito '{hito.tipo}': {error}")
+            verificado = HitoVerificado(
+                tipo=hito.tipo,
+                frame=hito.frame,
+                descripcion=hito.descripcion,
+                confirmado=False,
+                razonamiento=f"Error de verificación: {error}",
+                mensaje=None,
+            )
+        self.cola_salida.put(verificado)
 
     def _verificar(self, hito: HitoPotencial) -> HitoVerificado:
         entrada = {"tipo": hito.tipo, "descripcion": hito.descripcion}
@@ -269,44 +291,40 @@ class Verificador:
         else:
             contenido, llamadas = self._llamar_huggingface(prompt, frame_b64)
 
-        args_email = next((l["argumentos"] for l in llamadas if l["nombre"] == "enviar_email"), None)
-        args_voz   = next((l["argumentos"] for l in llamadas if l["nombre"] == "sintetizar_voz"), None)
+        args_email    = next((l["argumentos"] for l in llamadas if l["nombre"] == "enviar_email"), None)
+        args_voz      = next((l["argumentos"] for l in llamadas if l["nombre"] == "sintetizar_voz"), None)
+        args_descartar = next((l["argumentos"] for l in llamadas if l["nombre"] == "descartar_hito"), None)
 
         if args_email:
             if self._email_activo:
                 self._enviar_email(args_email["asunto"], args_email["cuerpo"], hito)
-            if args_voz:
-                logger.info(f"Hito '{hito.tipo}' → CONFIRMADO (email + voz)")
-            else:
-                logger.info(f"Hito '{hito.tipo}' → CONFIRMADO (email)")
+            logger.info(f"Hito '{hito.tipo}' → CONFIRMADO")
             logger.debug(f"Mensaje Gemma: {args_email['cuerpo']}")
             return HitoVerificado(
                 tipo=hito.tipo,
                 frame=hito.frame,
                 descripcion=hito.descripcion,
                 confirmado=True,
-                razonamiento=contenido or "",
+                razonamiento=args_email.get("razonamiento") or contenido or "",
                 mensaje=args_email["cuerpo"],
                 texto_tts=args_voz["texto"] if args_voz else None,
                 marca_tiempo_deteccion=hito.marca_tiempo,
             )
 
         logger.info(f"Hito '{hito.tipo}' → FALSO POSITIVO")
+        razonamiento_fp = (args_descartar or {}).get("razon") or contenido or "FALSO_POSITIVO"
         return HitoVerificado(
             tipo=hito.tipo,
             frame=hito.frame,
             descripcion=hito.descripcion,
             confirmado=False,
-            razonamiento=contenido or "FALSO_POSITIVO",
+            razonamiento=razonamiento_fp,
             mensaje=None,
             marca_tiempo_deteccion=hito.marca_tiempo,
         )
 
     def _herramientas(self) -> list:
-        tools = [_HERRAMIENTA_EMAIL]
-        if self._tts_activo:
-            tools.append(_HERRAMIENTA_VOZ)
-        return tools
+        return [_HERRAMIENTA_EMAIL]
 
     def _llamar_huggingface(self, prompt: str, frame_b64: str) -> tuple[str, list[dict]]:
         token = os.getenv("HUGGINGFACE_TOKEN", "")
@@ -379,37 +397,54 @@ class Verificador:
 
     def _llamar_google(self, prompt: str, frame_b64: str) -> tuple[str, list[dict]]:
         clave = os.getenv("GEMINI_API_KEY", "")
-        modelo = self._config.get("gemini_modelo", "models/gemma-4-26b-a4b-it")
-        url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        modelo = self._config.get("gemini_modelo", "gemini-2.5-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={clave}"
+
+        # Convertir herramientas del formato OpenAI al formato nativo de Gemini
+        declaraciones = []
+        for h in self._herramientas() + [_HERRAMIENTA_DESCARTAR]:
+            fn = h["function"]
+            props_native = {
+                nombre: {"type": spec["type"].upper(), "description": spec.get("description", "")}
+                for nombre, spec in fn["parameters"]["properties"].items()
+            }
+            declaraciones.append({
+                "name": fn["name"],
+                "description": fn["description"],
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": props_native,
+                    "required": fn["parameters"].get("required", []),
+                },
+            })
 
         payload = {
-            "model": modelo,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-            "tools": self._herramientas(),
-            "tool_choice": "auto",
-            "max_tokens": 300,
+            "contents": [{"parts": [
+                {"inline_data": {"mime_type": "image/jpeg", "data": frame_b64}},
+                {"text": prompt},
+            ]}],
+            "tools": [{"function_declarations": declaraciones}],
+            "tool_config": {"function_calling_config": {"mode": "ANY"}},
+            "generation_config": {
+                "thinking_config": {"thinking_budget": 0},
+                "max_output_tokens": 500,
+            },
         }
-        cabeceras = {"Authorization": f"Bearer {clave}"}
 
-        respuesta = httpx.post(url, json=payload, headers=cabeceras, timeout=self._timeout)
+        respuesta = httpx.post(url, json=payload, timeout=self._timeout)
         respuesta.raise_for_status()
-        mensaje = respuesta.json()["choices"][0]["message"]
+        parts = respuesta.json()["candidates"][0]["content"]["parts"]
 
-        contenido = mensaje.get("content") or ""
+        contenido = ""
         llamadas = []
-        for tc in (mensaje.get("tool_calls") or []):
-            llamadas.append({
-                "nombre": tc["function"]["name"],
-                "argumentos": json.loads(tc["function"]["arguments"]),
-            })
+        for part in parts:
+            if "text" in part:
+                contenido += part["text"]
+            elif "functionCall" in part:
+                llamadas.append({
+                    "nombre": part["functionCall"]["name"],
+                    "argumentos": part["functionCall"]["args"],
+                })
 
         return contenido, llamadas
 

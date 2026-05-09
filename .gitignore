@@ -28,6 +28,10 @@ datos/*.tar.gz
 # Capturas (pueden acumularse mucho)
 capturas/*.jpg
 capturas/*.png
+capturas/*.wav
+
+# Modelos YOLO genéricos descargados en raíz (no el fine-tuned)
+/yolo*.pt
 
 # Base de datos local
 *.db
@@ -55,7 +59,7 @@ Thumbs.db
 
 # Runs y artefactos de entrenamiento YOLO
 runs/
-modelos/fauna_urbana/
+modelos/fauna_urbana/weights/
 .ultralytics/
 
 # Metadatos Windows (Zone.Identifier)
