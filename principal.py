@@ -89,6 +89,7 @@ def main() -> None:
         interfaz.conectar_simulador(simulador)
         interfaz.conectar_verificador(verificador)
         interfaz.conectar_notificador(notificador)
+        interfaz.conectar_gestor_eventos(gestor_eventos)
     else:
         interfaz = Visualizador(
             cola_frames=capturador.cola_display,

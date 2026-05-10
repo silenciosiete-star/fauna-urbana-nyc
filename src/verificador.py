@@ -100,9 +100,16 @@ _PROMPT_PLANTILLA = (
     "Mira los bounding boxes en la imagen y verifica que la condición del hito se cumple. "
     "Solo descarta si los boxes claramente no corresponden a lo que dice la etiqueta "
     "(ej: el box etiquetado 'gorila' está sobre un objeto inanimado, no una persona).\n"
+    "{nota_zonas}"
     "• Si la condición SE CUMPLE → llama a enviar_email (razonamiento breve de lo que ves "
     "en los boxes, asunto conciso, cuerpo jocoso ≤ 2 frases).\n"
     "• Si NO se cumple → llama a descartar_hito con la razón concreta."
+)
+
+_NOTA_ZONAS_CONFLICTO = (
+    "Las zonas de detección están delimitadas por polígonos de color en la imagen "
+    "con su nombre entre corchetes. Verifica que los dos personajes del mismo tipo "
+    "se encuentran DENTRO de la misma zona marcada.\n"
 )
 
 
@@ -277,11 +284,13 @@ class Verificador:
 
     def _verificar_interno(self, hito: HitoPotencial) -> HitoVerificado:
         frame_b64 = _codificar_frame(hito.frame)
+        nota_zonas = _NOTA_ZONAS_CONFLICTO if hito.tipo == "conflicto_identidad" else ""
         prompt = _PROMPT_PLANTILLA.format(
             contexto=_CONTEXTO,
             tipo=hito.tipo.replace("_", " "),
             descripcion=hito.descripcion,
             detecciones_str=hito.detecciones_str or "desconocidos",
+            nota_zonas=nota_zonas,
         )
 
         if self._proveedor == "ollama":

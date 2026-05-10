@@ -1,4 +1,5 @@
 """Panel web: stream MJPEG en directo + historial de hitos."""
+import base64
 import csv
 import datetime
 import queue
@@ -110,6 +111,12 @@ class Panel:
         self._trails: dict[int, deque] = {}
         self._lock_trails = threading.Lock()
         self._notificador = None
+        self._gestor_eventos = None
+        self._frame_editor: np.ndarray | None = None
+        self._dim_frame_original: tuple[int, int] = (1920, 1080)
+        self._lock_editor = threading.Lock()
+        self._zonas_custom: dict | None = None
+        self._formas_editor: list = []
         self._app = self._crear_app()
 
     def conectar_simulador(self, simulador: Simulador) -> None:
@@ -121,6 +128,9 @@ class Panel:
 
     def conectar_notificador(self, notificador) -> None:
         self._notificador = notificador
+
+    def conectar_gestor_eventos(self, gestor) -> None:
+        self._gestor_eventos = gestor
 
     def iniciar(self) -> None:
         self._activo = True
@@ -166,6 +176,13 @@ class Panel:
                         continue
 
             self._tiempos_frame.append(time.monotonic())
+            # Guardar frame crudo (sin anotar) para el editor de zonas
+            if self._simulador is None or self._simulador.frame_override is None:
+                alto_ed = int(frame.shape[0] * _ANCHO_STREAM / frame.shape[1])
+                frame_ed = cv2.resize(frame, (_ANCHO_STREAM, alto_ed))
+                with self._lock_editor:
+                    self._frame_editor = frame_ed
+                    self._dim_frame_original = (frame.shape[1], frame.shape[0])
             simulando = self._simulador.simulando if self._simulador else None
             frame_anotado = self._anotar_frame(frame, simulando)
             alto = int(frame_anotado.shape[0] * _ANCHO_STREAM / frame_anotado.shape[1])
@@ -223,6 +240,15 @@ class Panel:
             from flask import send_from_directory
             return send_from_directory(str(self._carpeta_capturas.resolve()), nombre)
 
+        @app.server.route("/frame-zona")
+        def servir_frame_zona():
+            with self._lock_editor:
+                frame = self._frame_editor
+            if frame is None:
+                return Response(status=204)
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            return Response(buf.tobytes(), mimetype="image/jpeg")
+
         _estilo_drawer_base = {
             "position": "fixed", "top": 0, "width": "380px", "height": "100vh",
             "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
@@ -239,6 +265,13 @@ class Panel:
                 dcc.Store(id="menu-posicion", data="abajo"),
                 dcc.Store(id="audio-url-hito", data=None),
                 dcc.Store(id="cola-audio-nuevos", data=[]),
+                dcc.Store(id="zonas-custom-activas", data=False),
+                dcc.Store(id="zona-editor-formas", data=[]),
+                dcc.Store(id="zona-editor-info", data=None),
+                dcc.Store(id="editor-init-cmd", data=None),
+                dcc.Store(id="galeria-abierta", data=False),
+                dcc.Store(id="galeria-filtro", data={"categoria": "todas", "hito": None}),
+                dcc.Store(id="galeria-img-ampliada", data=None),
                 html.Audio(id="audio-tts", style={"display": "none"}, preload="auto"),
                 # ── Header ──────────────────────────────────────────
                 html.Div(
@@ -269,6 +302,7 @@ class Panel:
                                     children=[
                                         html.Button("⏸  Pausar", id="btn-pausa", className="btn-control", n_clicks=0),
                                         html.Button("📸  Captura", id="btn-captura", className="btn-control", n_clicks=0),
+                                        html.Button("🖼  Galería", id="btn-galeria", className="btn-control", n_clicks=0),
                                         html.Div(
                                             style={"position": "relative", "display": "inline-block"},
                                             children=[
@@ -303,7 +337,8 @@ class Panel:
                                         ),
                                         html.Button("📊  Modelo", id="btn-modelo", className="btn-control", n_clicks=0),
                                         html.Button("🌡  Calor", id="btn-calor", className="btn-control", n_clicks=0),
-                                        html.Button("🛤  Trayectorias", id="btn-trayectorias", className="btn-control", n_clicks=0),
+                                        html.Button("↗  Trayectorias", id="btn-trayectorias", className="btn-control", n_clicks=0),
+                                        html.Button("⬜ Zona Custom", id="btn-zonas", className="btn-control", n_clicks=0),
                                         html.Span(id="msg-captura", className="msg-control"),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
@@ -390,6 +425,172 @@ class Panel:
                             ],
                         ),
                         html.Div(id="cajita-modelo-cuerpo"),
+                    ],
+                ),
+                # ── Backdrop zonas ───────────────────────────────────
+                html.Div(
+                    id="drawer-backdrop-zonas",
+                    n_clicks=0,
+                    style={"display": "none", "position": "fixed", "top": 0, "left": 0,
+                           "width": "100vw", "height": "100vh", "zIndex": 999},
+                ),
+                # ── Drawer lateral derecho: editor de zonas ──────────
+                html.Div(
+                    id="cajita-zonas",
+                    style={**_estilo_drawer_base, "right": "-800px", "width": "780px"},
+                    children=[
+                        html.Div(
+                            style={"display": "flex", "justifyContent": "space-between",
+                                   "alignItems": "center", "marginBottom": "8px"},
+                            children=[
+                                html.Div("ZONAS — Conflicto de Identidad",
+                                         style={"fontFamily": "Rajdhani, sans-serif",
+                                                "fontSize": "1.1em", "fontWeight": "700",
+                                                "color": "#e040fb"}),
+                                html.Button("✕", id="btn-cerrar-zonas", n_clicks=0,
+                                            style={"background": "none", "border": "none",
+                                                   "color": "#555", "cursor": "pointer",
+                                                   "fontSize": "1.2em", "lineHeight": "1"}),
+                            ],
+                        ),
+                        html.Div(
+                            "Dibuja hasta 2 rectángulos sobre el frame para definir las zonas. "
+                            "El hito «Conflicto de Identidad» solo se disparará cuando dos "
+                            "personajes iguales coincidan dentro de la misma zona.",
+                            style={"fontSize": "0.72em", "color": "#4a4a7a",
+                                   "marginBottom": "10px", "lineHeight": "1.5"},
+                        ),
+                        html.Div(id="zona-contador",
+                                 children="0/2 zonas dibujadas",
+                                 style={"fontSize": "0.75em", "fontWeight": "600",
+                                        "color": "#607d8b", "marginBottom": "8px"}),
+                        html.Div(
+                            id="editor-contenedor",
+                            style={"position": "relative", "lineHeight": "0",
+                                   "background": "#07070f", "borderRadius": "4px",
+                                   "overflow": "hidden", "minHeight": "200px"},
+                            children=[
+                                html.Img(id="editor-img", src="",
+                                         style={"display": "block", "width": "100%",
+                                                "userSelect": "none", "pointerEvents": "none"}),
+                                html.Canvas(id="editor-canvas", width=960, height=540,
+                                            style={"position": "absolute", "top": "0", "left": "0",
+                                                   "width": "100%", "height": "100%",
+                                                   "cursor": "crosshair"}),
+                            ],
+                        ),
+                        html.Div(
+                            style={"display": "flex", "gap": "8px", "marginTop": "10px",
+                                   "alignItems": "center"},
+                            children=[
+                                html.Button("✓ Confirmar zonas", id="btn-confirmar-zonas",
+                                            className="btn-control activo", n_clicks=0),
+                                html.Button("Por defecto", id="btn-reset-zonas",
+                                            className="btn-control", n_clicks=0,
+                                            title="Restaurar zonas del fichero config.yaml y cerrar"),
+                                html.Button("✕ Limpiar", id="btn-limpiar-zonas",
+                                            className="btn-control", n_clicks=0,
+                                            title="Borrar rectángulos dibujados"),
+                                html.Span(id="msg-zonas", className="msg-control"),
+                            ],
+                        ),
+                    ],
+                ),
+                # ── Backdrop galería ─────────────────────────────────
+                html.Div(
+                    id="drawer-backdrop-galeria",
+                    n_clicks=0,
+                    style={"display": "none", "position": "fixed", "top": 0, "left": 0,
+                           "width": "100vw", "height": "100vh", "zIndex": 999},
+                ),
+                # ── Drawer lateral derecho: galería de capturas ──────
+                html.Div(
+                    id="cajita-galeria",
+                    style={**_estilo_drawer_base, "right": "-820px", "width": "800px"},
+                    children=[
+                        html.Div(
+                            style={"display": "flex", "justifyContent": "space-between",
+                                   "alignItems": "center", "marginBottom": "12px"},
+                            children=[
+                                html.Div("GALERÍA DE CAPTURAS",
+                                         style={"fontFamily": "Rajdhani, sans-serif",
+                                                "fontSize": "1.1em", "fontWeight": "700",
+                                                "color": "#00bcd4"}),
+                                html.Button("✕", id="btn-cerrar-galeria", n_clicks=0,
+                                            style={"background": "none", "border": "none",
+                                                   "color": "#555", "cursor": "pointer",
+                                                   "fontSize": "1.2em", "lineHeight": "1"}),
+                            ],
+                        ),
+                        html.Div(
+                            style={"display": "flex", "gap": "6px", "marginBottom": "8px"},
+                            children=[
+                                html.Button("Todas", id="btn-filtro-galeria-todas",
+                                            className="btn-control activo", n_clicks=0),
+                                html.Button("Manuales", id="btn-filtro-galeria-manual",
+                                            className="btn-control", n_clicks=0),
+                                html.Button("Automáticas", id="btn-filtro-galeria-auto",
+                                            className="btn-control", n_clicks=0),
+                            ],
+                        ),
+                        html.Div(
+                            id="galeria-filtros-hito",
+                            style={"display": "none", "gap": "6px", "flexWrap": "wrap",
+                                   "marginBottom": "10px"},
+                            children=[
+                                html.Button("Todos", id="btn-filtro-galeria-hito-todos",
+                                            className="btn-control activo", n_clicks=0),
+                                *[
+                                    html.Button(
+                                        etiqueta,
+                                        id=f"btn-filtro-galeria-hito-{tipo}",
+                                        className="btn-control",
+                                        n_clicks=0,
+                                        style={"borderLeft": f"3px solid {_COLORES_HITO.get(tipo, _COLOR_HITO_DEFAULT)}"},
+                                    )
+                                    for tipo, etiqueta in _HITOS_SIMULABLES
+                                ],
+                            ],
+                        ),
+                        html.Div(id="galeria-contenido"),
+                    ],
+                ),
+                # ── Lightbox pantalla completa ───────────────────────
+                html.Div(
+                    id="galeria-lightbox",
+                    style={"display": "none", "position": "fixed", "inset": "0",
+                           "zIndex": 2000},
+                    children=[
+                        html.Div(
+                            id="galeria-lightbox-backdrop",
+                            n_clicks=0,
+                            style={"position": "absolute", "inset": "0",
+                                   "background": "rgba(0,0,0,0.92)", "cursor": "zoom-out"},
+                        ),
+                        html.Button(
+                            "✕", id="btn-cerrar-lightbox", n_clicks=0,
+                            style={"position": "absolute", "top": "20px", "right": "24px",
+                                   "background": "none", "border": "none",
+                                   "color": "#888", "cursor": "pointer",
+                                   "fontSize": "1.5em", "lineHeight": "1", "zIndex": 2001},
+                        ),
+                        html.Div(
+                            style={"position": "absolute", "inset": "0", "display": "flex",
+                                   "flexDirection": "column", "alignItems": "center",
+                                   "justifyContent": "center", "padding": "60px 40px",
+                                   "pointerEvents": "none"},
+                            children=[
+                                html.Img(
+                                    id="lightbox-img", src="",
+                                    style={"maxWidth": "100%", "maxHeight": "80vh",
+                                           "objectFit": "contain", "borderRadius": "6px",
+                                           "display": "block", "pointerEvents": "all"},
+                                ),
+                                html.Div(id="lightbox-info",
+                                         style={"marginTop": "14px", "textAlign": "center",
+                                                "pointerEvents": "none"}),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -517,8 +718,8 @@ class Panel:
         def toggle_trayectorias(_):
             self._tracking_activo = not self._tracking_activo
             if self._tracking_activo:
-                return "🛤  Trayectorias", "btn-control activo"
-            return "🛤  Trayectorias", "btn-control"
+                return "↗  Trayectorias", "btn-control activo"
+            return "↗  Trayectorias", "btn-control"
 
         app.clientside_callback(
             """
@@ -938,6 +1139,299 @@ class Panel:
                         backdrop_visible)
             return {**_estilo_modelo_base, "right": "-800px"}, no_update, backdrop_oculto
 
+        _estilo_zonas_base = {
+            "position": "fixed", "top": 0, "width": "780px", "height": "100vh",
+            "background": "#0d0d1a", "borderLeft": "1px solid #2a2a3e",
+            "zIndex": 1000, "padding": "24px 20px",
+            "boxShadow": "-4px 0 20px rgba(0,0,0,0.5)",
+            "transition": "right 0.3s ease", "overflowY": "auto",
+        }
+
+        @app.callback(
+            Output("cajita-zonas", "style"),
+            Output("editor-img", "src"),
+            Output("editor-init-cmd", "data"),
+            Output("drawer-backdrop-zonas", "style"),
+            Output("zona-editor-formas", "data"),
+            Output("msg-zonas", "children"),
+            Output("zonas-custom-activas", "data"),
+            Output("zona-editor-info", "data"),
+            Input("btn-zonas", "n_clicks"),
+            Input("btn-cerrar-zonas", "n_clicks"),
+            Input("drawer-backdrop-zonas", "n_clicks"),
+            Input("btn-confirmar-zonas", "n_clicks"),
+            Input("btn-reset-zonas", "n_clicks"),
+            Input("btn-limpiar-zonas", "n_clicks"),
+            State("cajita-zonas", "style"),
+            State("zona-editor-formas", "data"),
+            State("zona-editor-info", "data"),
+            prevent_initial_call=True,
+        )
+        def gestionar_zonas(n_btn, _cerrar, _backdrop, n_conf, n_reset, n_limp,
+                            estilo_actual, formas_actuales, info_editor):
+            from dash import ctx, no_update
+
+            backdrop_oculto  = {"display": "none", "position": "fixed", "top": 0, "left": 0,
+                                "width": "100vw", "height": "100vh", "zIndex": 999}
+            backdrop_visible = {**backdrop_oculto, "display": "block"}
+            estilo_cerrado   = {**_estilo_zonas_base, "right": "-800px"}
+            estilo_abierto   = {**_estilo_zonas_base, "right": "0px"}
+            nu = no_update
+
+            tid = ctx.triggered_id
+
+            # ── Abrir drawer ─────────────────────────────────────────
+            if tid == "btn-zonas":
+                abierto = estilo_actual is not None and estilo_actual.get("right") == "0px"
+                if abierto:
+                    return estilo_cerrado, nu, nu, backdrop_oculto, nu, nu, nu, nu
+                with self._lock_editor:
+                    frame_ed = self._frame_editor
+                if frame_ed is not None:
+                    h_e, w_e = frame_ed.shape[:2]
+                    _, buf = cv2.imencode(".jpg", frame_ed, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    jpeg_b64 = base64.b64encode(buf).decode()
+                else:
+                    w_e, h_e = 960, 540
+                    jpeg_b64 = ""
+                data_url = f"data:image/jpeg;base64,{jpeg_b64}" if jpeg_b64 else ""
+                info     = {"w_e": w_e, "h_e": h_e}
+                formas_init = self._formas_editor if self._zonas_custom is not None else []
+                cmd = {"shapes": formas_init, "t": time.time()}
+                return (estilo_abierto, data_url, cmd,
+                        backdrop_visible, formas_init, "", nu, info)
+
+            # ── Cerrar drawer ────────────────────────────────────────
+            if tid in ("btn-cerrar-zonas", "drawer-backdrop-zonas"):
+                return estilo_cerrado, nu, nu, backdrop_oculto, nu, "", nu, nu
+
+            # ── Limpiar formas ───────────────────────────────────────
+            if tid == "btn-limpiar-zonas":
+                cmd = {"shapes": [], "t": time.time()}
+                return nu, nu, cmd, nu, [], "", nu, nu
+
+            # ── "Por defecto" — restaurar YAML y cerrar ──────────────
+            if tid == "btn-reset-zonas":
+                if self._gestor_eventos:
+                    self._gestor_eventos.actualizar_zonas_conflicto(None)
+                self._zonas_custom  = None
+                self._formas_editor = []
+                cmd = {"shapes": [], "t": time.time()}
+                return estilo_cerrado, nu, cmd, backdrop_oculto, [], "", False, nu
+
+            # ── Confirmar zonas ──────────────────────────────────────
+            if tid == "btn-confirmar-zonas":
+                formas = [s for s in (formas_actuales or []) if "x0" in s][:2]
+                if not formas:
+                    return nu, nu, nu, nu, nu, "Sin rectángulos dibujados", nu, nu
+
+                info = info_editor or {}
+                w_e  = info.get("w_e", 960)
+                h_e  = info.get("h_e", 540)
+                with self._lock_editor:
+                    orig_w, orig_h = self._dim_frame_original
+
+                escala_x = orig_w / w_e
+                escala_y = orig_h / h_e
+                clases_detectables = list(_MAP50_POR_CLASE.keys())
+                nuevas_zonas: dict = {}
+                for i, s in enumerate(formas):
+                    x0o = int(min(s["x0"], s["x1"]) * escala_x)
+                    x1o = int(max(s["x0"], s["x1"]) * escala_x)
+                    y0o = int(min(s["y0"], s["y1"]) * escala_y)
+                    y1o = int(max(s["y0"], s["y1"]) * escala_y)
+                    nombre = f"zona_custom_{i + 1}"
+                    puntos = np.array(
+                        [[x0o, y0o], [x1o, y0o], [x1o, y1o], [x0o, y1o]], dtype=np.int32
+                    )
+                    nuevas_zonas[nombre] = Zona(
+                        nombre=nombre,
+                        clases_detectables=clases_detectables,
+                        poligono=sv.PolygonZone(polygon=puntos),
+                    )
+                if self._gestor_eventos:
+                    self._gestor_eventos.actualizar_zonas_conflicto(nuevas_zonas)
+                self._zonas_custom  = nuevas_zonas
+                self._formas_editor = formas
+                return (estilo_cerrado, nu, nu, backdrop_oculto,
+                        nu, f"✓ {len(nuevas_zonas)} zonas activas", True, nu)
+
+            return nu, nu, nu, nu, nu, nu, nu, nu
+
+        # ── Inicializar canvas cuando cambia el comando ───────────────
+        app.clientside_callback(
+            """
+            function(cmd) {
+                if (!cmd) return window.dash_clientside.no_update;
+                var img    = document.getElementById('editor-img');
+                var canvas = document.getElementById('editor-canvas');
+                if (!img || !canvas) return window.dash_clientside.no_update;
+                function doInit() {
+                    canvas.width  = img.naturalWidth  || 960;
+                    canvas.height = img.naturalHeight || 540;
+                    if (window.zeInit) window.zeInit('editor-canvas', cmd.shapes || []);
+                }
+                if (img.complete && img.naturalWidth > 0) { doInit(); }
+                else { img.onload = doInit; }
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output("editor-canvas", "title"),
+            Input("editor-init-cmd", "data"),
+            prevent_initial_call=True,
+        )
+
+        @app.callback(
+            Output("btn-zonas", "className"),
+            Output("btn-zonas", "children"),
+            Input("zonas-custom-activas", "data"),
+            prevent_initial_call=False,
+        )
+        def actualizar_btn_zonas(activas):
+            if activas:
+                return "btn-control activo", "⬜ Zona Custom"
+            return "btn-control", "⬜ Zona Custom"
+
+        @app.callback(
+            Output("galeria-img-ampliada", "data"),
+            Input({"type": "galeria-card", "index": ALL}, "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def seleccionar_img_galeria(n_clicks_list):
+            from dash import ctx, no_update
+            if not ctx.triggered or ctx.triggered[0].get("value", 0) == 0:
+                return no_update
+            tid = ctx.triggered_id
+            if not isinstance(tid, dict) or tid.get("type") != "galeria-card":
+                return no_update
+            return {"nombre": tid["index"], "t": time.time()}
+
+        @app.callback(
+            Output("galeria-lightbox", "style"),
+            Output("lightbox-img", "src"),
+            Output("lightbox-info", "children"),
+            Input("galeria-img-ampliada", "data"),
+            Input("galeria-lightbox-backdrop", "n_clicks"),
+            Input("btn-cerrar-lightbox", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def mostrar_lightbox(datos, _backdrop, _cerrar):
+            from dash import ctx, no_update as nu
+            estilo_oculto  = {"display": "none",  "position": "fixed", "inset": "0", "zIndex": 2000}
+            estilo_visible = {"display": "block", "position": "fixed", "inset": "0", "zIndex": 2000}
+            if ctx.triggered_id in ("galeria-lightbox-backdrop", "btn-cerrar-lightbox"):
+                return estilo_oculto, nu, nu
+            if not datos or not datos.get("nombre"):
+                return estilo_oculto, nu, nu
+            nombre = datos["nombre"]
+            tipo   = None
+            ts_str = ""
+            hito = next(
+                (h for h in self._base_datos.hitos_recientes(limite=500)
+                 if h.get("ruta_frame") and Path(h["ruta_frame"]).name == nombre),
+                None,
+            )
+            if hito:
+                tipo   = hito["tipo"]
+                ts_str = datetime.datetime.fromtimestamp(hito["marca_tiempo"]).strftime("%d/%m/%Y %H:%M:%S")
+            else:
+                ruta = self._carpeta_capturas / nombre
+                if ruta.exists():
+                    ts_str = datetime.datetime.fromtimestamp(ruta.stat().st_mtime).strftime("%d/%m/%Y %H:%M:%S")
+            color      = _COLORES_HITO.get(tipo, _COLOR_HITO_DEFAULT) if tipo else "#607d8b"
+            tipo_label = tipo.replace("_", " ").upper() if tipo else "MANUAL"
+            info = html.Div(children=[
+                html.Span(tipo_label,
+                          style={"color": color, "fontFamily": "Rajdhani, sans-serif",
+                                 "fontWeight": "700", "letterSpacing": "0.05em",
+                                 "marginRight": "12px", "fontSize": "0.9em"}),
+                html.Span(ts_str, style={"fontSize": "0.82em", "color": "#505070"}),
+            ])
+            return estilo_visible, f"/captura-img/{nombre}", info
+
+        _estilo_galeria_base = {**_estilo_drawer_base, "width": "800px"}
+
+        @app.callback(
+            Output("cajita-galeria", "style"),
+            Output("drawer-backdrop-galeria", "style"),
+            Output("galeria-abierta", "data"),
+            Input("btn-galeria", "n_clicks"),
+            Input("btn-cerrar-galeria", "n_clicks"),
+            Input("drawer-backdrop-galeria", "n_clicks"),
+            State("cajita-galeria", "style"),
+            prevent_initial_call=True,
+        )
+        def gestionar_galeria_estado(n_btn, _cerrar, _backdrop, estilo_actual):
+            from dash import ctx
+            bd_oculto  = {"display": "none", "position": "fixed", "top": 0, "left": 0,
+                          "width": "100vw", "height": "100vh", "zIndex": 999}
+            bd_visible = {**bd_oculto, "display": "block"}
+            if ctx.triggered_id == "btn-galeria":
+                abierto = estilo_actual is not None and estilo_actual.get("right") == "0px"
+                if abierto:
+                    return {**_estilo_galeria_base, "right": "-820px"}, bd_oculto, False
+                return {**_estilo_galeria_base, "right": "0px"}, bd_visible, True
+            return {**_estilo_galeria_base, "right": "-820px"}, bd_oculto, False
+
+        @app.callback(
+            Output("galeria-contenido", "children"),
+            Output("galeria-filtros-hito", "style"),
+            Output("btn-filtro-galeria-todas", "className"),
+            Output("btn-filtro-galeria-manual", "className"),
+            Output("btn-filtro-galeria-auto", "className"),
+            Output("btn-filtro-galeria-hito-todos", "className"),
+            *[Output(f"btn-filtro-galeria-hito-{tipo}", "className") for tipo, _ in _HITOS_SIMULABLES],
+            Output("galeria-filtro", "data"),
+            Input("galeria-abierta", "data"),
+            Input("btn-filtro-galeria-todas", "n_clicks"),
+            Input("btn-filtro-galeria-manual", "n_clicks"),
+            Input("btn-filtro-galeria-auto", "n_clicks"),
+            Input("btn-filtro-galeria-hito-todos", "n_clicks"),
+            *[Input(f"btn-filtro-galeria-hito-{tipo}", "n_clicks") for tipo, _ in _HITOS_SIMULABLES],
+            State("galeria-filtro", "data"),
+            prevent_initial_call=True,
+        )
+        def renderizar_galeria(abierta, *_rest):
+            from dash import ctx, no_update
+            nu = no_update
+            filtro = _rest[-1] or {"categoria": "todas", "hito": None}
+
+            if ctx.triggered_id == "galeria-abierta" and not abierta:
+                return (nu,) * (7 + len(_HITOS_SIMULABLES))
+
+            tid = ctx.triggered_id
+            if tid == "btn-filtro-galeria-todas":
+                filtro = {"categoria": "todas", "hito": None}
+            elif tid == "btn-filtro-galeria-manual":
+                filtro = {"categoria": "manual", "hito": None}
+            elif tid == "btn-filtro-galeria-auto":
+                filtro = {"categoria": "auto", "hito": None}
+            elif isinstance(tid, str) and tid.startswith("btn-filtro-galeria-hito-"):
+                hito_tipo = tid.replace("btn-filtro-galeria-hito-", "")
+                filtro = {"categoria": "auto",
+                          "hito": None if hito_tipo == "todos" else hito_tipo}
+
+            cat  = filtro["categoria"]
+            hito = filtro["hito"]
+
+            estilo_hito_row = {
+                "display": "flex" if cat == "auto" else "none",
+                "gap": "6px", "flexWrap": "wrap", "marginBottom": "10px",
+            }
+            cn_todas  = "btn-control activo" if cat == "todas"  else "btn-control"
+            cn_manual = "btn-control activo" if cat == "manual" else "btn-control"
+            cn_auto   = "btn-control activo" if cat == "auto"   else "btn-control"
+            cn_h_todos = "btn-control activo" if cat == "auto" and hito is None else "btn-control"
+            cn_hitos = [
+                "btn-control activo" if cat == "auto" and hito == tipo else "btn-control"
+                for tipo, _ in _HITOS_SIMULABLES
+            ]
+
+            contenido = _construir_galeria_contenido(self, filtro)
+            return (contenido, estilo_hito_row,
+                    cn_todas, cn_manual, cn_auto, cn_h_todos,
+                    *cn_hitos, filtro)
+
         return app
 
     # ------------------------------------------------------------------
@@ -951,10 +1445,18 @@ class Panel:
     def _anotar_frame(self, frame: np.ndarray, simulando: str | None = None) -> np.ndarray:
         frame = frame.copy()
 
-        for nombre, zona in self._zonas.items():
+        zonas_display = self._zonas_custom if self._zonas_custom is not None else self._zonas
+        for nombre, zona in zonas_display.items():
             if nombre == "fauna":
                 continue
-            color = _COLORES_ZONA.get(nombre, _COLOR_ZONA_DEFAULT)
+            if self._zonas_custom is not None:
+                # zona_custom_1 → color norte, zona_custom_2 → color sur
+                color = _COLORES_ZONA.get(
+                    "esquina_norte" if nombre == "zona_custom_1" else "esquina_sur",
+                    _COLOR_ZONA_DEFAULT,
+                )
+            else:
+                color = _COLORES_ZONA.get(nombre, _COLOR_ZONA_DEFAULT)
             pts = zona.poligono.polygon.reshape((-1, 1, 2)).astype(np.int32)
             cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
             x, y = zona.poligono.polygon[0]
@@ -1072,6 +1574,84 @@ class Panel:
 
 
 # ------------------------------------------------------------------
+
+def _construir_galeria_contenido(panel: "Panel", filtro: dict) -> html.Div:
+    categoria  = filtro.get("categoria", "todas")
+    hito_filtro = filtro.get("hito")
+    capturas: list[dict] = []
+
+    if categoria in ("todas", "manual"):
+        carpeta = panel._carpeta_capturas
+        if carpeta.exists():
+            for f in sorted(carpeta.glob("panel_*.jpg"),
+                            key=lambda p: p.stat().st_mtime, reverse=True):
+                ts = f.stat().st_mtime
+                capturas.append({
+                    "nombre": f.name,
+                    "tipo":   None,
+                    "ts":     ts,
+                    "ts_str": datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M"),
+                })
+
+    if categoria in ("todas", "auto"):
+        for h in panel._base_datos.hitos_recientes(limite=500):
+            if not h.get("ruta_frame") or not h.get("confirmado"):
+                continue
+            if hito_filtro and h["tipo"] != hito_filtro:
+                continue
+            nombre = Path(h["ruta_frame"]).name
+            ts     = h["marca_tiempo"]
+            capturas.append({
+                "nombre": nombre,
+                "tipo":   h["tipo"],
+                "ts":     ts,
+                "ts_str": datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M"),
+            })
+
+    capturas.sort(key=lambda x: x["ts"], reverse=True)
+
+    if not capturas:
+        return html.P("Sin capturas disponibles.",
+                      style={"color": "#404060", "fontSize": "0.85em", "padding": "20px 0"})
+
+    cards = []
+    for c in capturas:
+        color      = _COLORES_HITO.get(c["tipo"], _COLOR_HITO_DEFAULT) if c["tipo"] else "#607d8b"
+        tipo_label = c["tipo"].replace("_", " ").upper() if c["tipo"] else "MANUAL"
+        cards.append(html.Div(
+            id={"type": "galeria-card", "index": c["nombre"]},
+            n_clicks=0,
+            style={"background": "#0b0b18", "borderRadius": "6px",
+                   "overflow": "hidden", "border": "1px solid #1a1a2e",
+                   "cursor": "zoom-in"},
+            children=[
+                html.Img(
+                    src=f"/captura-img/{c['nombre']}",
+                    style={"width": "100%", "display": "block",
+                           "aspectRatio": "16/9", "objectFit": "cover"},
+                ),
+                html.Div(
+                    style={"padding": "6px 8px"},
+                    children=[
+                        html.Div(tipo_label,
+                                 style={"fontSize": "0.68em", "color": color,
+                                        "fontFamily": "Rajdhani, sans-serif",
+                                        "fontWeight": "700", "letterSpacing": "0.05em",
+                                        "marginBottom": "2px"}),
+                        html.Div(c["ts_str"],
+                                 style={"fontSize": "0.62em", "color": "#404060",
+                                        "fontVariantNumeric": "tabular-nums"}),
+                    ],
+                ),
+            ],
+        ))
+
+    return html.Div(
+        style={"display": "grid", "gridTemplateColumns": "repeat(3, 1fr)",
+               "gap": "8px", "paddingBottom": "8px"},
+        children=cards,
+    )
+
 
 def _color_por_id(tracker_id: int) -> tuple[int, int, int]:
     h = (tracker_id * 47) % 180

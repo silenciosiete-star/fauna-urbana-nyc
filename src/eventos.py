@@ -5,6 +5,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 
+import cv2
 import numpy as np
 import supervision as sv
 from loguru import logger
@@ -61,6 +62,9 @@ class GestorEventos:
         # Último avistamiento por clase (para avistamiento_raro)
         self._ultimo_avistamiento: dict[str, float] = {}
 
+        # Zonas personalizadas para conflicto_identidad (None = usar self._zonas)
+        self._zonas_conflicto: dict[str, Zona] | None = None
+
         self._activo = False
         self._hilo: threading.Thread | None = None
         self.en_pausa: bool = False
@@ -100,6 +104,14 @@ class GestorEventos:
             else:
                 self._ultimo_disparo[t] = v
         self._cooldowns_guardados = {}
+
+    def actualizar_zonas_conflicto(self, zonas_custom: dict[str, Zona] | None) -> None:
+        """Reemplaza las zonas usadas para conflicto_identidad. None restaura las del YAML."""
+        self._zonas_conflicto = zonas_custom
+        if zonas_custom is None:
+            logger.info("Zonas conflicto_identidad: restauradas desde YAML")
+        else:
+            logger.info(f"Zonas conflicto_identidad: {list(zonas_custom.keys())} (personalizadas)")
 
     # ------------------------------------------------------------------
 
@@ -149,14 +161,19 @@ class GestorEventos:
             cooldown=cfg["marvel_vs_dc"]["cooldown_segundos"],
         )
 
-        clase_conflicto = self._clase_conflicto_identidad(resultado.detecciones)
+        resultado_conflicto = self._clase_conflicto_identidad(resultado.detecciones)
+        zonas_conflicto = self._zonas_conflicto if self._zonas_conflicto is not None else self._zonas
         self._evaluar(
             tipo="conflicto_identidad",
             condicion=cfg.get("conflicto_identidad", {}).get("activo", False)
-            and clase_conflicto is not None,
+            and resultado_conflicto is not None,
             resultado=resultado,
-            descripcion=f"{clase_conflicto}×2 en la misma zona" if clase_conflicto else "",
+            descripcion=(
+                f"{resultado_conflicto[0]}×2 en zona «{resultado_conflicto[1]}»"
+                if resultado_conflicto else ""
+            ),
             cooldown=cfg["conflicto_identidad"]["cooldown_segundos"],
+            zonas=zonas_conflicto,
         )
 
         avistamiento = self._clase_para_avistamiento_raro(
@@ -178,6 +195,7 @@ class GestorEventos:
         resultado: ResultadoTracking,
         descripcion: str,
         cooldown: int,
+        zonas: dict[str, Zona] | None = None,
     ) -> None:
         if condicion:
             self._consecutivos[tipo] = self._consecutivos.get(tipo, 0) + 1
@@ -203,7 +221,7 @@ class GestorEventos:
         ) or "ninguno"
         hito = HitoPotencial(
             tipo=tipo,
-            frame=_anotar_frame(resultado.frame, resultado.detecciones),
+            frame=_anotar_frame(resultado.frame, resultado.detecciones, zonas),
             descripcion=descripcion,
             detecciones_str=detecciones_str,
         )
@@ -215,8 +233,9 @@ class GestorEventos:
         self.cola_salida.put(hito)
         logger.info(f"Hito potencial detectado: {tipo} — {descripcion}")
 
-    def _clase_conflicto_identidad(self, detecciones: sv.Detections) -> str | None:
-        for zona in self._zonas.values():
+    def _clase_conflicto_identidad(self, detecciones: sv.Detections) -> tuple[str, str] | None:
+        zonas = self._zonas_conflicto if self._zonas_conflicto is not None else self._zonas
+        for nombre_zona, zona in zonas.items():
             en_zona = detecciones_en_zona(detecciones, zona)
             if len(en_zona) < 2:
                 continue
@@ -224,7 +243,7 @@ class GestorEventos:
             visto: set[str] = set()
             for nombre in nombres:
                 if nombre in visto:
-                    return nombre
+                    return nombre, nombre_zona
                 visto.add(nombre)
         return None
 
@@ -246,14 +265,26 @@ class GestorEventos:
 # ------------------------------------------------------------------
 # Utilidades de módulo
 
-def _anotar_frame(frame: np.ndarray, detecciones: sv.Detections) -> np.ndarray:
-    if detecciones is None or len(detecciones) == 0:
+def _anotar_frame(
+    frame: np.ndarray,
+    detecciones: sv.Detections,
+    zonas: dict | None = None,
+) -> np.ndarray:
+    if (detecciones is None or len(detecciones) == 0) and not zonas:
         return frame
     frame = frame.copy()
-    nombres = detecciones.data.get("class_name", np.array([]))
-    etiquetas = [f"{nombres[i]} {detecciones.confidence[i]:.0%}" for i in range(len(detecciones))]
-    frame = sv.BoxAnnotator().annotate(scene=frame, detections=detecciones)
-    frame = sv.LabelAnnotator().annotate(scene=frame, detections=detecciones, labels=etiquetas)
+    if zonas:
+        for nombre, zona in zonas.items():
+            pts = zona.poligono.polygon.reshape((-1, 1, 2)).astype(np.int32)
+            cv2.polylines(frame, [pts], isClosed=True, color=(0, 200, 220), thickness=2)
+            x, y = zona.poligono.polygon[0]
+            cv2.putText(frame, f"[{nombre}]", (int(x) + 4, int(y) + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 220), 1, cv2.LINE_AA)
+    if detecciones is not None and len(detecciones) > 0:
+        nombres = detecciones.data.get("class_name", np.array([]))
+        etiquetas = [f"{nombres[i]} {detecciones.confidence[i]:.0%}" for i in range(len(detecciones))]
+        frame = sv.BoxAnnotator().annotate(scene=frame, detections=detecciones)
+        frame = sv.LabelAnnotator().annotate(scene=frame, detections=detecciones, labels=etiquetas)
     return frame
 
 

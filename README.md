@@ -184,6 +184,8 @@ El mínimo presentable y funcional:
 - [x] Trayectorias por personaje — trail con fade y color único por ID, toggle en el panel
 - [x] Verificación paralela de hitos — múltiples hitos verificados simultáneamente con ThreadPoolExecutor
 - [x] Panel de modelo mejorado — tooltips ℹ en cada gráfica con explicación de elementos, bloque de conclusiones con valoración por clase en la matriz de confusión
+- [x] Selector de zonas custom — editor canvas HTML5 interactivo sobre el frame en directo: dibujado, resize por arista/esquina, anti-solapamiento entre zonas, colores coordinados con el stream
+- [x] Galería de capturas — drawer con filtros por categoría (Manuales / Automáticas) y por tipo de hito; lightbox de pantalla completa al hacer clic en cada imagen
 - [ ] Despliegue web (Docker)
 
 ---

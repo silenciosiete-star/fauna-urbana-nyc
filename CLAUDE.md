@@ -207,6 +207,8 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] **Verificación paralela de hitos** — `Verificador` usa `ThreadPoolExecutor(max_workers=3)`; múltiples hitos se verifican simultáneamente y aparecen en el panel como "⏳ verificando..." en paralelo.
 - [x] **Panel de modelo — tooltips y conclusiones** — icono ℹ con tooltip CSS en cada sección de la pestaña Modelo (métricas, pérdidas, mAP50 por clase, matriz de confusión). Bloque de conclusiones al final con valoración por clase codificada por color. Tooltip de pérdidas abre hacia la izquierda (`.info-icono--izquierda`) para no salirse del drawer.
 - [x] **Artefactos de entrenamiento en git** — `modelos/fauna_urbana/` ya no está en `.gitignore`; se trackean imágenes, CSV y args. Solo `modelos/fauna_urbana/weights/` sigue excluido. El panel de modelo funciona en cualquier clon del repo sin copiar archivos a mano.
+- [x] **Selector de zonas custom** — editor canvas HTML5 en `assets/zona_editor.js`: dibujado libre, resize por arista/esquina (hit-test correcto con prefijo `resize-` separado de la dirección), anti-solapamiento AABB entre las dos zonas. Botón "⬜ Zona Custom" con estado activo. Colores coordinados con el stream (norte/sur). Formas restauradas al reabrir el drawer.
+- [x] **Galería de capturas** — drawer 800 px con grid 3 columnas. Filtros: Todas / Manuales / Automáticas + sub-filtros por tipo de hito. Lightbox pantalla completa (z-index 2000): backdrop opaco clicable, imagen centrada max 80 vh, etiqueta + timestamp. Cierre por clic en fondo o ✕.
 - [ ] Docker
 - [ ] **Audio en el panel** ← solución correcta: reemplazar MJPEG por `<video>` HTML5 + `<canvas>` + WebSocket
 
@@ -227,7 +229,7 @@ config/config.yaml   # Única fuente de verdad para parámetros.
 - [x] `notificador.py`: guarda frame, registra en BD, delega Telegram a BotTelegram y TTS
 - [x] `bot_telegram.py`: bot unificado — push de hitos + comandos interactivos
 - [x] `simulador.py`: simula hitos inyectando frames del dataset, pausa el stream real
-- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle, trayectorias por tracker_id con toggle, TTS con cola automática y toggle 🔊/🔇, pestaña Modelo con tooltips ℹ y conclusiones por clase
+- [x] `panel.py`: Dash completo con stream, hitos, simulador, drawer de detalle, mapa de calor con toggle, trayectorias por tracker_id con toggle, TTS con cola automática y toggle 🔊/🔇, pestaña Modelo con tooltips ℹ y conclusiones por clase, selector de zonas custom, galería de capturas con lightbox
 - [x] `principal.py`: orquesta todos los hilos con arranque y parada ordenados
 
 ### Pendiente al retomar
