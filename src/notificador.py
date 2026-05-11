@@ -121,6 +121,7 @@ class Notificador:
         tts_activo = self._cfg_notif.get("tts", {}).get("activo", False)
 
         acciones: list[str] = []
+        errores: list[str] = []
         if ruta_frame:
             acciones.append("captura")
         if hito.confirmado:
@@ -138,13 +139,23 @@ class Notificador:
         logger.info(f"Hito confirmado: {hito.tipo} — {hito.mensaje}")
 
         if self._bot_telegram:
-            self._bot_telegram.enviar_hito(hito)
+            futuro = self._bot_telegram.enviar_hito(hito)
+            if futuro is None:
+                logger.warning("Telegram no enviado — bot inactivo (¿falta TELEGRAM_TOKEN?)")
+                errores.append("telegram")
+            else:
+                try:
+                    futuro.result(timeout=15)
+                except Exception as error:
+                    logger.error(f"Error enviando Telegram: {error}")
+                    errores.append("telegram")
 
         if tts_activo and hito.mensaje:
             # TTS antes de escribir en BD: hito y audio llegan al panel a la vez
-            self._generar_tts(hito.mensaje, hito.marca_tiempo)
+            if not self._generar_tts(hito.mensaje, hito.marca_tiempo):
+                errores.append("voz")
 
-        self._bd.registrar_hito(hito, ruta_frame, acciones)
+        self._bd.registrar_hito(hito, ruta_frame, acciones, errores)
 
     def _guardar_captura(self, hito: HitoVerificado) -> str | None:
         try:
@@ -157,7 +168,7 @@ class Notificador:
             logger.error(f"Error guardando frame: {error}")
             return None
 
-    def _generar_tts(self, texto: str, marca_tiempo: float) -> None:
+    def _generar_tts(self, texto: str, marca_tiempo: float) -> bool:
         try:
             import numpy as np
             import soundfile as sf
@@ -173,7 +184,8 @@ class Notificador:
                 chunks.append(audio)
 
             if not chunks:
-                return
+                logger.warning("TTS generó 0 chunks de audio")
+                return False
 
             audio_completo = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
             nombre = f"audio_{int(marca_tiempo * 1000)}.wav"
@@ -182,5 +194,7 @@ class Notificador:
             with self._lock_cola_audio:
                 self._cola_audio.append(nombre)
             logger.debug(f"Audio TTS encolado: {ruta}")
+            return True
         except Exception as error:
             logger.error(f"Error generando TTS: {error}")
+            return False

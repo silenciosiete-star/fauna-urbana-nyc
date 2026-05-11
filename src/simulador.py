@@ -50,6 +50,7 @@ class Simulador:
 
         inicio = time.time()
         disparo_antes = self._gestor._ultimo_disparo.get(tipo, 0)
+        hito_detectado = False
 
         while time.time() - inicio < _TIMEOUT_S:
             # avistamiento_raro: re-sembrar timestamp en cada iteración porque
@@ -62,12 +63,22 @@ class Simulador:
 
             # Salir en cuanto el gestor haya registrado el disparo del hito
             if self._gestor._ultimo_disparo.get(tipo, 0) > disparo_antes:
+                hito_detectado = True
                 break
 
             time.sleep(_INTERVALO_INYECCION_S)
 
         self._gestor.restaurar_cooldowns()
         self._capturador.pausado = pausado_antes
+
+        # Si el timeout se agotó antes de que YOLO detectara, esperar un poco más:
+        # puede haber frames en el pipeline que aún no han llegado al gestor.
+        if not hito_detectado:
+            t_drenado = time.time()
+            while time.time() - t_drenado < 5.0:
+                if self._gestor._ultimo_disparo.get(tipo, 0) > disparo_antes:
+                    break
+                time.sleep(0.1)
 
         with self._lock:
             self.simulando = None

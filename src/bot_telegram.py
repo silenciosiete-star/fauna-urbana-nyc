@@ -41,32 +41,32 @@ class BotTelegram:
             self._hilo.join(timeout=15)
         logger.info("Bot de Telegram detenido")
 
-    def enviar_hito(self, hito: HitoVerificado) -> None:
+    def enviar_hito(self, hito: HitoVerificado):
+        """Envía el hito por Telegram. Devuelve un Future para poder esperar el resultado."""
         if not self._activo or self._loop is None or not hito.confirmado:
-            return
-        asyncio.run_coroutine_threadsafe(self._enviar_hito_async(hito), self._loop)
+            return None
+        return asyncio.run_coroutine_threadsafe(self._enviar_hito_async(hito), self._loop)
 
     # ------------------------------------------------------------------
 
     async def _enviar_hito_async(self, hito: HitoVerificado) -> None:
         chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-        if not chat_id or not self._app:
-            return
-        try:
-            tipo_label = hito.tipo.replace("_", " ").upper()
-            texto = f"*{tipo_label}*\n{hito.mensaje}"
-            _, buf = cv2.imencode(".jpg", hito.frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            foto = io.BytesIO(buf.tobytes())
-            foto.name = "hito.jpg"
-            await self._app.bot.send_photo(
-                chat_id=chat_id,
-                photo=foto,
-                caption=texto,
-                parse_mode="Markdown",
-            )
-            logger.debug(f"Notificación Telegram enviada: {hito.tipo}")
-        except Exception as error:
-            logger.error(f"Error enviando notificación Telegram: {error}")
+        if not chat_id:
+            raise RuntimeError("TELEGRAM_CHAT_ID no configurado")
+        if not self._app:
+            raise RuntimeError("App de Telegram no inicializada")
+        tipo_label = hito.tipo.replace("_", " ").upper()
+        texto = f"*{tipo_label}*\n{hito.mensaje}"
+        _, buf = cv2.imencode(".jpg", hito.frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        foto = io.BytesIO(buf.tobytes())
+        foto.name = "hito.jpg"
+        await self._app.bot.send_photo(
+            chat_id=chat_id,
+            photo=foto,
+            caption=texto,
+            parse_mode="Markdown",
+        )
+        logger.debug(f"Notificación Telegram enviada: {hito.tipo}")
 
     async def _cmd_donde(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         resultado = self._rastreador.ultimo_resultado

@@ -33,6 +33,7 @@ class BaseDatos:
             for columna_sql in (
                 "ALTER TABLE hitos ADD COLUMN marca_tiempo_deteccion REAL",
                 "ALTER TABLE hitos ADD COLUMN acciones TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE hitos ADD COLUMN errores TEXT NOT NULL DEFAULT ''",
             ):
                 try:
                     con.execute(columna_sql)
@@ -45,14 +46,15 @@ class BaseDatos:
         hito: HitoVerificado,
         ruta_frame: str | None = None,
         acciones: list[str] | None = None,
+        errores: list[str] | None = None,
     ) -> None:
         with self._lock:
             with self._conectar() as con:
                 con.execute(
                     """INSERT INTO hitos
                        (marca_tiempo, marca_tiempo_deteccion, tipo, descripcion,
-                        confirmado, razonamiento, mensaje, ruta_frame, acciones)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        confirmado, razonamiento, mensaje, ruta_frame, acciones, errores)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         hito.marca_tiempo,
                         hito.marca_tiempo_deteccion,
@@ -63,6 +65,7 @@ class BaseDatos:
                         hito.mensaje,
                         ruta_frame,
                         ",".join(acciones) if acciones else "",
+                        ",".join(errores) if errores else "",
                     ),
                 )
         logger.debug(f"Hito registrado en BD: {hito.tipo} ({'confirmado' if hito.confirmado else 'falso positivo'})")

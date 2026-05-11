@@ -125,6 +125,9 @@ El modelo resultante está en `modelos/fauna_urbana.pt` y es el que usa el siste
 ```bash
 # Node.js — necesario para que yt-dlp resuelva el n-challenge de YouTube
 sudo apt-get install -y nodejs
+
+# espeak-ng — motor de pronunciación requerido por Kokoro TTS
+sudo apt-get install -y espeak-ng
 ```
 
 ### Entorno Python

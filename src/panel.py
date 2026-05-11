@@ -339,7 +339,7 @@ class Panel:
                                         html.Button("🌡  Calor", id="btn-calor", className="btn-control", n_clicks=0),
                                         html.Button("↗  Trayectorias", id="btn-trayectorias", className="btn-control", n_clicks=0),
                                         html.Button("⬜ Zona Custom", id="btn-zonas", className="btn-control", n_clicks=0),
-                                        html.Span(id="msg-captura", className="msg-control"),
+                                        html.Span(id="msg-captura", style={"display": "none"}),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
                                 ),
@@ -773,7 +773,27 @@ class Panel:
             nombre = datetime.datetime.now().strftime("panel_%Y%m%d_%H%M%S.jpg")
             cv2.imwrite(str(self._carpeta_capturas / nombre), frame)
             logger.info(f"Captura guardada: {nombre}")
-            return f"✓ {nombre}"
+            return ""
+
+        app.clientside_callback(
+            """
+            function(n_clicks) {
+                if (!n_clicks) return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+                setTimeout(function() {
+                    var btn = document.getElementById('btn-captura');
+                    if (btn) {
+                        btn.textContent = '📸  Captura';
+                        btn.className = 'btn-control';
+                    }
+                }, 2000);
+                return ['✓ Guardada', 'btn-control activo'];
+            }
+            """,
+            Output("btn-captura", "children"),
+            Output("btn-captura", "className"),
+            Input("btn-captura", "n_clicks"),
+            prevent_initial_call=True,
+        )
 
         @app.callback(
             Output("menu-abierto", "data"),
@@ -855,7 +875,7 @@ class Panel:
                 return no_update
             return {k: hito[k] for k in ("tipo", "descripcion", "razonamiento", "mensaje",
                                           "confirmado", "marca_tiempo", "marca_tiempo_deteccion",
-                                          "acciones", "ruta_frame")}
+                                          "acciones", "errores", "ruta_frame")}
 
         @app.callback(
             Output("cajita-detalle", "style"),
@@ -974,25 +994,37 @@ class Panel:
             }
             acciones_raw = data.get("acciones") or ""
             acciones_lista = [a for a in acciones_raw.split(",") if a]
+            errores_lista = [a for a in (data.get("errores") or "").split(",") if a]
             if acciones_lista:
+                def _badge_accion(a: str) -> html.Span:
+                    ico, etq, col = _ETIQUETAS_ACCION.get(a, ("•", a, "#607d8b"))
+                    if a in errores_lista:
+                        return html.Span(
+                            f"✗ {etq}",
+                            title="Error al ejecutar esta acción",
+                            style={
+                                "fontSize": "0.78em", "padding": "3px 10px",
+                                "borderRadius": "12px", "color": "#ff5252",
+                                "background": "#ff525218",
+                                "border": "1px solid #ff525244",
+                                "letterSpacing": "0.03em",
+                            },
+                        )
+                    return html.Span(
+                        f"{ico} {etq}",
+                        style={
+                            "fontSize": "0.78em", "padding": "3px 10px",
+                            "borderRadius": "12px", "color": col,
+                            "background": f"{col}18",
+                            "border": f"1px solid {col}44",
+                            "letterSpacing": "0.03em",
+                        },
+                    )
                 cuerpo.append(html.Div(style=_s_bloque, children=[
                     html.Div("Acciones", style=_s_label),
                     html.Div(
                         style={"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginTop": "2px"},
-                        children=[
-                            html.Span(
-                                f"{ico} {etq}",
-                                style={
-                                    "fontSize": "0.78em", "padding": "3px 10px",
-                                    "borderRadius": "12px", "color": col,
-                                    "background": f"{col}18",
-                                    "border": f"1px solid {col}44",
-                                    "letterSpacing": "0.03em",
-                                },
-                            )
-                            for a in acciones_lista
-                            for ico, etq, col in [_ETIQUETAS_ACCION.get(a, ("•", a, "#607d8b"))]
-                        ],
+                        children=[_badge_accion(a) for a in acciones_lista],
                     ),
                 ]))
 
