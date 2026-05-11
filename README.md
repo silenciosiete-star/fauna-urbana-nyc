@@ -126,32 +126,43 @@ Modo único de producción. La imagen incluye Python, OpenCV, Ultralytics, Kokor
 
 **Requisitos previos:**
 - Docker Engine + plugin `compose` (versión moderna `docker compose`, no `docker-compose`)
+- [Git LFS](https://git-lfs.com) instalado en el host (`sudo apt-get install git-lfs && git lfs install`)
 - Servidor Ollama accesible en la red local con Gemma 4 cargado
-- Modelo fine-tuned en `modelos/fauna_urbana.pt`
 
-**1. Configurar variables de entorno:**
+**1. Clonar el repo y descargar el modelo:**
 
-Copia `.env.example` a `.env` y rellena tus credenciales:
+El modelo fine-tuned (`modelos/fauna_urbana.pt`, 20 MB) está gestionado con Git LFS. Tras clonar:
+
+```bash
+git clone https://github.com/silenciosiete-star/fauna-urbana-nyc.git
+cd fauna-urbana-nyc
+git lfs pull                  # descarga los .pt reales (sin esto solo tendrías los punteros LFS)
+```
+
+Verificar que el fichero pesa ~20 MB (no ~130 bytes):
+
+```bash
+ls -lh modelos/fauna_urbana.pt
+```
+
+**2. Configurar variables de entorno:**
 
 ```bash
 cp .env.example .env
 ```
 
-Las claves obligatorias:
+Edita `.env` y rellena estas claves (todas obligatorias salvo `HUGGINGFACE_TOKEN` y `GEMINI_API_KEY`, que son alternativas opcionales):
 
-```
-GEMMA_PROVEEDOR=ollama
-OLLAMA_URL=http://192.168.0.135:11434       # IP del servidor Ollama en tu LAN
-TELEGRAM_TOKEN=...                          # token de @BotFather
-TELEGRAM_CHAT_ID=...                        # ID del chat destino
-GAS_EMAIL_URL=https://script.google.com/... # endpoint de Google Apps Script
-HOST_UID=1000                               # `id -u` en tu host
-HOST_GID=1000                               # `id -g` en tu host
-```
+| Variable | Cómo obtenerla |
+|----------|----------------|
+| `GEMMA_PROVEEDOR=ollama` | Fija. Indica el proveedor del verificador. |
+| `OLLAMA_URL` | URL del servidor Ollama en la red local con Gemma 4 cargado (ej. `http://192.168.0.135:11434`). Verificable con `curl <url>/api/tags`. |
+| `TELEGRAM_TOKEN` | Habla con [@BotFather](https://t.me/BotFather) en Telegram → `/newbot` → sigue los pasos → te devuelve el token. |
+| `TELEGRAM_CHAT_ID` | Habla con [@userinfobot](https://t.me/userinfobot), te responde con tu ID al instante. Alternativa: escribe `/start` al bot recién creado y luego abre `https://api.telegram.org/bot<TOKEN>/getUpdates` — el `result[0].message.chat.id` es tu ID. |
+| `GAS_EMAIL_URL` | URL del despliegue web del Google Apps Script que envía el email. Ver sección «Configurar Google Apps Script». |
+| `HOST_UID` / `HOST_GID` | `id -u` / `id -g` en tu host. Necesarios para que el contenedor pueda escribir en los bind-mounts (`datos_bd/`, `capturas/`). |
 
-> `HOST_UID` y `HOST_GID` deben coincidir con los del usuario que ejecuta Docker, para que el contenedor pueda escribir en los bind-mounts (`datos_bd/`, `capturas/`).
-
-**2. Construir y arrancar:**
+**3. Construir y arrancar:**
 
 ```bash
 mkdir -p capturas datos_bd      # directorios para los volúmenes
@@ -162,7 +173,7 @@ docker compose logs -f fauna
 
 Cuando los logs muestren `Serving on http://0.0.0.0:8050`, abre el panel en [http://localhost:8050](http://localhost:8050).
 
-**3. Operación habitual:**
+**4. Operación habitual:**
 
 ```bash
 docker compose ps               # estado del contenedor
@@ -172,6 +183,34 @@ docker compose down             # parar y eliminar
 ```
 
 `config/` se monta read-only desde el host: editar `config/config.yaml` y reiniciar para aplicar cambios sin rebuild.
+
+### Configurar Google Apps Script (email)
+
+Cuando Gemma confirma un hito, el verificador hace POST a `GAS_EMAIL_URL` con `{asunto, cuerpo, html_cuerpo}`. El script lo recibe y manda el email vía la cuenta Google del propietario del script.
+
+**Pasos:**
+
+1. Entra en [script.google.com](https://script.google.com) → `Nuevo proyecto`.
+2. Pega este código:
+
+   ```javascript
+   function doPost(e) {
+     const datos = JSON.parse(e.postData.contents);
+     MailApp.sendEmail({
+       to: Session.getActiveUser().getEmail(),
+       subject: datos.asunto,
+       htmlBody: datos.html_cuerpo || datos.cuerpo,
+     });
+     return ContentService.createTextOutput("ok");
+   }
+   ```
+
+3. `Implementar` → `Nuevo despliegue` → tipo **Aplicación web**.
+4. Ejecutar como: **yo**. Quién tiene acceso: **cualquiera**.
+5. Acepta los permisos cuando Google los pida (acceso a tu Gmail para enviar).
+6. Copia la URL del despliegue → es tu `GAS_EMAIL_URL`.
+
+> Si modificas el script más tarde, hay que crear un **nuevo** despliegue (no editar el existente) para que la URL cambie y los permisos se refresquen.
 
 ### En local (modo desarrollo)
 
