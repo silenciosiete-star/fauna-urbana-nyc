@@ -14,15 +14,15 @@ Times Square tiene su propia vida salvaje. Este sistema analiza el stream en viv
 
 | Componente | Tecnología | Notas |
 |------------|------------|-------|
-| Captura del stream | OpenCV + yt-dlp | Hilo independiente para no bloquear la inferencia |
+| Captura del stream | OpenCV + yt-dlp | Hilo independiente con timeouts FFmpeg para no bloquear la inferencia |
 | Detección y clasificación | YOLO26 (fine-tuned) | Se analiza 1 de cada N frames para aligerar carga |
 | Tracking entre frames | Supervision (ByteTrack) | Interpola posiciones en los frames no analizados |
-| Verificador y narrador | Gemma 4 — Google AI Studio (desarrollo) / Ollama local (producción) | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. Tool calling para envío de email. |
-| Panel web | Dash + Plotly | Stream en directo, histórico de hitos, simulador integrado |
-| Base de datos | SQLite | |
+| Verificador y narrador | Gemma 4 vía Ollama local | Confirma el hito y redacta la notificación en tono jocoso. Asíncrono. Tool calling para envío de email. Fallback opcional a Gemini 2.5 Flash en desarrollo. |
+| Panel web | Dash + Plotly servido con Waitress | Stream en directo (MJPEG compartido), histórico de hitos, simulador integrado |
+| Base de datos | SQLite con caché en memoria | |
 | Notificaciones | python-telegram-bot | Push de hitos con foto + comandos `/donde`, `/cuantos`, `/captura`, `/estado` |
 | Síntesis de voz | Kokoro TTS 82M (hexgrad/Kokoro-82M) | Voz `ef_dora` (español). Cola automática en el panel con toggle 🔊/🔇 |
-| Visualización en directo | OpenCV | Ventana con bboxes, IDs de tracking y límites de zona |
+| Despliegue | Docker + docker-compose | Imagen multi-stage CPU (~1.5 GB). Volúmenes para BD, capturas, modelo y config. |
 | Configuración | YAML | Zonas, hitos y umbrales sin tocar código |
 
 > **SAM3 descartado:** la segmentación pixel a pixel no aporta lo suficiente para el uso real del proyecto (conteo, tracking, zonas, heatmap) como para justificar su coste computacional.
@@ -118,33 +118,80 @@ El modelo resultante está en `modelos/fauna_urbana.pt` y es el que usa el siste
 
 ---
 
-## Instalación
+## Despliegue
 
-### Dependencias del sistema
+### Con Docker (recomendado)
+
+Modo único de producción. La imagen incluye Python, OpenCV, Ultralytics, Kokoro TTS y todas las dependencias de sistema (`ffmpeg`, `espeak-ng`, `libsndfile1`).
+
+**Requisitos previos:**
+- Docker Engine + plugin `compose` (versión moderna `docker compose`, no `docker-compose`)
+- Servidor Ollama accesible en la red local con Gemma 4 cargado
+- Modelo fine-tuned en `modelos/fauna_urbana.pt`
+
+**1. Configurar variables de entorno:**
+
+Copia `.env.example` a `.env` y rellena tus credenciales:
 
 ```bash
-# Node.js — necesario para que yt-dlp resuelva el n-challenge de YouTube
-sudo apt-get install -y nodejs
-
-# espeak-ng — motor de pronunciación requerido por Kokoro TTS
-sudo apt-get install -y espeak-ng
+cp .env.example .env
 ```
 
-### Entorno Python
+Las claves obligatorias:
+
+```
+GEMMA_PROVEEDOR=ollama
+OLLAMA_URL=http://192.168.0.135:11434       # IP del servidor Ollama en tu LAN
+TELEGRAM_TOKEN=...                          # token de @BotFather
+TELEGRAM_CHAT_ID=...                        # ID del chat destino
+GAS_EMAIL_URL=https://script.google.com/... # endpoint de Google Apps Script
+HOST_UID=1000                               # `id -u` en tu host
+HOST_GID=1000                               # `id -g` en tu host
+```
+
+> `HOST_UID` y `HOST_GID` deben coincidir con los del usuario que ejecuta Docker, para que el contenedor pueda escribir en los bind-mounts (`datos_bd/`, `capturas/`).
+
+**2. Construir y arrancar:**
 
 ```bash
+mkdir -p capturas datos_bd      # directorios para los volúmenes
+docker compose build            # ~5-10 min la primera vez
+docker compose up -d
+docker compose logs -f fauna
+```
+
+Cuando los logs muestren `Serving on http://0.0.0.0:8050`, abre el panel en [http://localhost:8050](http://localhost:8050).
+
+**3. Operación habitual:**
+
+```bash
+docker compose ps               # estado del contenedor
+docker compose logs -f fauna    # seguir logs en vivo
+docker compose restart fauna    # reiniciar tras cambios en config/
+docker compose down             # parar y eliminar
+```
+
+`config/` se monta read-only desde el host: editar `config/config.yaml` y reiniciar para aplicar cambios sin rebuild.
+
+### En local (modo desarrollo)
+
+Útil para iterar sobre el código sin reconstruir la imagen.
+
+```bash
+# Dependencias del sistema (Ubuntu/Debian)
+sudo apt-get install -y ffmpeg espeak-ng libsndfile1
+
+# Entorno Python
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### Variables de entorno
+# Configurar .env igual que en modo Docker
+cp .env.example .env
+# (editar .env)
 
-Crea un archivo `.env` en la raíz del proyecto:
-
-```
-HUGGINGFACE_TOKEN=hf_...       # Token de HuggingFace (verificador en desarrollo)
-GEMMA_PROVEEDOR=huggingface    # o "ollama" para producción local
+# Arrancar
+python principal.py
 ```
 
 ### Cookies de YouTube (si YouTube bloquea la IP)
@@ -172,7 +219,6 @@ El mínimo presentable y funcional:
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
 - [x] Tracking de trayectorias con Supervision
 - [x] **Pruebas de integración con stream real** — superadas
-- [x] Visualización en directo del stream con bboxes, IDs de tracking y límites de zona
 
 ---
 
@@ -189,7 +235,7 @@ El mínimo presentable y funcional:
 - [x] Panel de modelo mejorado — tooltips ℹ en cada gráfica con explicación de elementos, bloque de conclusiones con valoración por clase en la matriz de confusión
 - [x] Selector de zonas custom — editor canvas HTML5 interactivo sobre el frame en directo: dibujado, resize por arista/esquina, anti-solapamiento entre zonas, colores coordinados con el stream
 - [x] Galería de capturas — drawer con filtros por categoría (Manuales / Automáticas) y por tipo de hito; lightbox de pantalla completa al hacer clic en cada imagen
-- [ ] Despliegue web (Docker)
+- [x] **Despliegue Docker** — imagen multi-stage CPU, panel servido con Waitress, volúmenes para BD/capturas/modelo, UID/GID configurables por build-arg para que los bind-mounts sean escribibles
 
 ---
 
@@ -211,33 +257,41 @@ Para evitar falsos positivos, un hito solo se dispara si la condición se mantie
 
 ```
 fauna-urbana-nyc/
+├── Dockerfile               # Imagen multi-stage CPU con Python 3.11 + apt deps
+├── docker-compose.yml       # Orquestación: volúmenes, UID/GID, restart policy
+├── .dockerignore            # Excluye .venv, .git, datos, capturas, etc. del build
+├── .env / .env.example      # Credenciales y UID/GID del host
+├── requirements.txt         # opencv-headless + ultralytics + dash + waitress + kokoro
+├── principal.py             # Punto de entrada: arranca hilos y sirve panel con Waitress
 ├── config/
 │   └── config.yaml          # Zonas, hitos, umbrales, URL del stream
-├── datos/                   # Frames recopilados y dataset etiquetado
+├── datos/                   # Frames recopilados y dataset etiquetado (modo dev)
+├── datos_bd/                # SQLite del sistema en producción (volumen)
+├── capturas/                # Frames y audios TTS generados al dispararse un hito (volumen)
 ├── modelos/
 │   ├── fauna_urbana.pt      # Pesos del modelo fine-tuned
 │   └── fauna_urbana/        # Artefactos del entrenamiento (curvas, matriz, CSV)
 ├── src/
-│   ├── captura.py           # Lectura del stream (hilo independiente)
+│   ├── captura.py           # Lectura del stream con timeouts FFmpeg (hilo independiente)
 │   ├── detector.py          # Inferencia YOLO cada N frames
 │   ├── rastreador.py        # Tracking con Supervision/ByteTrack
 │   ├── zonas.py             # Gestión de zonas configurables
 │   ├── eventos.py           # Detección de hitos, llama a verificador.py
 │   ├── verificador.py       # Gemma 4 asíncrono: confirma hito y genera mensaje jocoso
-│   ├── base_datos.py        # Registro en SQLite (incluye razonamiento de Gemma)
-│   ├── notificador.py       # Telegram, TTS — despacha el mensaje generado por Gemma
+│   ├── base_datos.py        # SQLite con caché en memoria + invalidación al insertar
+│   ├── notificador.py       # Telegram + TTS en paralelo, limpieza periódica de audios
+│   ├── bot_telegram.py      # Push de hitos + comandos interactivos
 │   ├── simulador.py         # Simula hitos inyectando frames del dataset
-│   └── panel.py             # Dashboard web (Dash): stream, hitos, simulador, métricas
+│   └── panel.py             # Dashboard Dash: stream MJPEG compartido, hitos, simulador, métricas
 ├── entrenamiento/
 │   ├── recopilar_frames.py  # Extrae frames del stream para el dataset
 │   ├── preparar_dataset.py  # Conversión y splits train/val/test
 │   └── entrenar.py          # Fine-tuning de YOLO26
 ├── tools/
 │   └── analizar_simulaciones.py  # Análisis de resultados de simulaciones
-├── assets/
-│   ├── estilo.css           # Estilos del panel web
-│   ├── audio.js             # Desbloqueo de autoplay en primer click del usuario
-│   └── simulaciones/        # Frames y textos de ejemplo para el simulador
-├── capturas/                # Frames guardados al dispararse un hito
-└── principal.py             # Punto de entrada
+└── assets/
+    ├── estilo.css           # Estilos del panel web
+    ├── audio.js             # Desbloqueo de autoplay en primer click del usuario
+    ├── zona_editor.js       # Editor canvas HTML5 para zonas custom
+    └── simulaciones/        # Frames y textos de ejemplo para el simulador
 ```

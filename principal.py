@@ -1,7 +1,7 @@
-"""Punto de entrada. Arranca todos los hilos y los conecta."""
-import signal
+"""Punto de entrada. Arranca todos los hilos y sirve el panel con waitress."""
 import sys
 
+import waitress
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
@@ -91,21 +91,29 @@ def main() -> None:
         modulos.append(bot_telegram)
     modulos.append(panel)
 
-    def apagar(sig, frame):
-        logger.info("Señal de parada recibida. Deteniendo módulos...")
-        for modulo in reversed(modulos):
-            modulo.detener()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, apagar)
-    signal.signal(signal.SIGTERM, apagar)
-
     logger.info("Iniciando Fauna Urbana NYC...")
     for modulo in modulos:
         modulo.iniciar()
 
-    logger.info("Sistema activo. Pulsa Ctrl+C para detener.")
-    signal.pause()
+    puerto = config["panel"]["puerto"]
+    logger.info(f"Sistema activo. Panel: http://localhost:{puerto}")
+    try:
+        # waitress instala sus propios handlers de SIGINT/SIGTERM
+        # y retorna limpiamente cuando llega la señal.
+        waitress.serve(
+            panel.app_wsgi(),
+            host="0.0.0.0",
+            port=puerto,
+            threads=8,
+        )
+    finally:
+        logger.info("Deteniendo módulos...")
+        for modulo in reversed(modulos):
+            try:
+                modulo.detener()
+            except Exception as error:
+                logger.error(f"Error deteniendo módulo: {error}")
+    sys.exit(0)
 
 
 if __name__ == "__main__":

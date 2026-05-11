@@ -3,7 +3,7 @@
 
 stream:
   url: "https://www.youtube.com/watch?v=a9J1OP_x5Rg"  # Times Square Express View (alternativo mientras rnXIjl_Rzy4 está offline)
-  frames_por_inferencia: 4  # Analizar 1 de cada N frames con YOLO
+  frames_por_inferencia: 8  # Analizar 1 de cada N frames con YOLO (8 para CPU, 4 si hay GPU)
 
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
@@ -90,7 +90,7 @@ notificaciones:
     activo: true
 
 base_datos:
-  ruta: "fauna_urbana.db"
+  ruta: "datos_bd/fauna_urbana.db"
 
 capturas:
   carpeta: "capturas/"

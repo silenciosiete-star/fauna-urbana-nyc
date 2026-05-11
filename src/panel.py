@@ -140,18 +140,17 @@ class Panel:
         self._activo = True
         self._hilo_frames = threading.Thread(target=self._bucle_frames, daemon=True)
         self._hilo_frames.start()
-        hilo_dash = threading.Thread(
-            target=lambda: self._app.run(host="0.0.0.0", port=self._puerto, debug=False),
-            daemon=True,
-        )
-        hilo_dash.start()
-        logger.info(f"Panel web iniciado en http://localhost:{self._puerto}")
+        logger.info("Panel: hilo de frames iniciado (servidor WSGI lo arranca principal)")
+
+    def app_wsgi(self):
+        """Devuelve el servidor Flask para servir con waitress desde principal.py."""
+        return self._app.server
 
     def detener(self) -> None:
         self._activo = False
         if self._hilo_frames:
             self._hilo_frames.join(timeout=2)
-        logger.info("Panel web detenido")
+        logger.info("Panel detenido")
 
     # ------------------------------------------------------------------
 

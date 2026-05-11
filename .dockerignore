@@ -1,0 +1,59 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Bytecode y cachés
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Documentación (no se necesita en la imagen)
+README.md
+CLAUDE.md
+*.md
+
+# Volúmenes externos — montados, no copiados
+modelos/
+datos/
+datos_bd/
+capturas/
+*.db
+*.sqlite
+
+# Credenciales — montadas como volumen
+.env
+.env.example
+
+# Modelos genéricos descargados en raíz
+yolo*.pt
+
+# Solo entrenamiento, no producción
+entrenamiento/
+tools/
+ver_detecciones.py
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
