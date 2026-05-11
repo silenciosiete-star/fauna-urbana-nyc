@@ -69,3 +69,7 @@ modelos/fauna_urbana/weights/
 logs/
 *.log
 cookies.txt
+
+# Vídeos crudos de segmentos HLS (temporales, no van a git)
+*.mkv
+*.ts

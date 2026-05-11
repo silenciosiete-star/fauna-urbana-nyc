@@ -39,7 +39,12 @@ class CapturadorStream:
 
     # ------------------------------------------------------------------
 
+    def _es_archivo_local(self) -> bool:
+        return not self.url.startswith("http")
+
     def _obtener_url_directa(self) -> str:
+        if self._es_archivo_local():
+            return self.url
         opciones = {
             "format": "best[height>=1080]/best[height>=720]/best",
             "quiet": True,
@@ -50,17 +55,18 @@ class CapturadorStream:
             return info["url"]
 
     def _bucle_captura(self) -> None:
+        es_archivo = self._es_archivo_local()
         while self._activo:
             try:
-                logger.info("Obteniendo URL del stream...")
+                if not es_archivo:
+                    logger.info("Obteniendo URL del stream...")
                 url_directa = self._obtener_url_directa()
                 cap = cv2.VideoCapture(url_directa, cv2.CAP_FFMPEG)
-                # Timeouts a nivel de FFmpeg para evitar que cap.read()
-                # se quede bloqueado indefinidamente si la red cae.
-                if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
-                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _TIMEOUT_OPEN_MS)
-                if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
-                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _TIMEOUT_READ_MS)
+                if not es_archivo:
+                    if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+                        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _TIMEOUT_OPEN_MS)
+                    if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+                        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _TIMEOUT_READ_MS)
 
                 if not cap.isOpened():
                     raise RuntimeError("No se pudo abrir el stream")
@@ -68,7 +74,7 @@ class CapturadorStream:
                 logger.info("Stream abierto. Capturando frames...")
                 fps = cap.get(cv2.CAP_PROP_FPS) or 30
                 intervalo = 1.0 / fps
-                t_renovar = time.monotonic() + _INTERVALO_RECONEXION_HLS_S
+                t_renovar = time.monotonic() + (_INTERVALO_RECONEXION_HLS_S if not es_archivo else float("inf"))
 
                 while self._activo:
                     if time.monotonic() >= t_renovar:
@@ -78,6 +84,9 @@ class CapturadorStream:
                     t_inicio = time.monotonic()
                     ok, frame = cap.read()
                     if not ok:
+                        if es_archivo:
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            continue
                         logger.warning("Error leyendo frame, reconectando...")
                         break
 

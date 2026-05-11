@@ -56,48 +56,9 @@ Si Gemma determina que es un falso positivo, el hito no se dispara y queda regis
 
 ## Fine-tuning de YOLO26
 
-Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento es lo que permite distinguir gorila de Spider-Man de Deadpool.
+Sin el fine-tuning, YOLO solo detecta "persona". El reentrenamiento permite distinguir las 11 clases del proyecto: `gorila` · `transformer` · `deadpool` · `estatua_libertad` · `sonic` · `spiderman` · `super_mario` · `batman` · `minnie_mouse` · `elmo` · `mickey_mouse`.
 
-Clases: `gorila` · `transformer` · `deadpool` · `estatua_libertad` · `sonic` · `spiderman` · `super_mario` · `batman` · `minnie_mouse` · `elmo` · `mickey_mouse`
-
-### Paso 1 — Recopilar frames (`entrenamiento/recopilar_frames.py`)
-
-**Cuándo capturar:** los personajes están en la plaza de **11h a 20h hora de Nueva York** (UTC-4 en verano, UTC-5 en invierno). Fuera de esa franja la plaza está vacía — no tiene sentido capturar.
-
-**Sesiones recomendadas:** 3-4 sesiones en distintos días y horas para cubrir variedad de iluminación:
-
-```bash
-# Sesión tipo: ~240 frames en ~2 horas reales de stream
-python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames
-
-# Si quieres una carpeta por sesión para organizarte mejor:
-python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames_manana
-python entrenamiento/recopilar_frames.py --intervalo 30 --maximo 240 --salida datos/frames_tarde
-```
-
-**Después de cada sesión:** revisar la carpeta y borrar los frames sin personajes visibles antes de subir a Roboflow. El objetivo es llegar a **400-600 frames útiles** en total (con al menos un personaje visible).
-
-> **Desequilibrio de clases:** spider-man aparece con mucha más frecuencia que el gorila o deadpool. Si al revisar los frames ves que alguna clase tiene menos de ~80 imágenes, haz una sesión extra buscando activamente esos momentos o complementa con imágenes externas (convenciones, eventos).
-
-### Paso 2 — Etiquetar con Roboflow
-
-- Crear un proyecto en [Roboflow](https://roboflow.com) con las 11 clases de personajes.
-- Subir los frames filtrados y etiquetar bounding boxes. Usar el **auto-label** de Roboflow para acelerar — revisa y corrige, no te fíes al 100%.
-- Ritmo orientativo: ~150-200 imágenes/hora. Con 500 frames útiles, ~3-4 horas de etiquetado.
-
-### Paso 3 — Preparar el dataset (`entrenamiento/preparar_dataset.py`)
-
-- Exportar desde Roboflow en formato YOLO
-- Split: 70% train / 10% validación / 20% test
-- Aumentado de datos: rotaciones, cambios de brillo y contraste, recortes
-
-### Paso 4 — Entrenar (`entrenamiento/entrenar.py`)
-
-Fine-tuning de YOLO26 partiendo de los pesos preentrenados de Ultralytics (transfer learning). No se entrena desde cero.
-
-### Resultados del entrenamiento
-
-Entrenado en RTX 4080 Super · 100 épocas · imgsz=1280 · batch=8.
+**Dataset:** 499 imágenes capturadas del stream con `entrenamiento/recopilar_frames.py`, etiquetadas en Roboflow y preparadas con `entrenamiento/preparar_dataset.py` (split 70/10/20, aumentado con variaciones de brillo y contraste). **Entrenamiento:** `entrenamiento/entrenar.py` — transfer learning sobre pesos preentrenados de Ultralytics, RTX 4080 Super, 100 épocas, imgsz=1280, batch=8.
 
 | Clase | mAP50 | Nota |
 |-------|-------|------|
@@ -111,10 +72,10 @@ Entrenado en RTX 4080 Super · 100 épocas · imgsz=1280 · batch=8.
 | batman | 0.849 | |
 | minnie_mouse | 0.823 | |
 | elmo | 0.765 | |
-| mickey_mouse | 0.580 | Recall bajo (0.37) — confusión con minnie. Mejorable añadiendo más imágenes. |
+| mickey_mouse | 0.580 | Recall bajo (0.37) — confusión con minnie. |
 | **global** | **0.879** | |
 
-El modelo resultante está en `modelos/fauna_urbana.pt` y es el que usa el sistema por defecto.
+El modelo fine-tuned está en `modelos/fauna_urbana.pt` (Git LFS) y es el que usa el sistema por defecto.
 
 ---
 
@@ -243,6 +204,21 @@ Si yt-dlp devuelve `Sign in to confirm you're not a bot`:
 
 El capturador las detecta automáticamente.
 
+### Modo demo (stream offline)
+
+Si el stream de YouTube no está disponible, el sistema puede leer un vídeo local en su lugar. El repositorio incluye `demo_times_square.mp4` (1 minuto, 1080p, grabado del stream `a9J1OP_x5Rg`) gestionado con **Git LFS**.
+
+Para activarlo, cambia una línea en `config/config.yaml`:
+
+```yaml
+stream:
+  url: "demo_times_square.mp4"
+```
+
+El capturador detecta automáticamente que es un archivo local, omite yt-dlp y rebobina el vídeo al llegar al final, por lo que el demo corre en bucle indefinidamente.
+
+Para volver al stream real, restaura la URL de YouTube en la misma línea.
+
 ---
 
 ## MVP — Lo que tiene que funcionar
@@ -253,10 +229,10 @@ El mínimo presentable y funcional:
 - [x] Detección y clasificación de personajes con YOLO fine-tuned (mAP50 global 0.879)
 - [x] Conteo por personaje con visualización sobre el frame
 - [x] Al menos 2 zonas configurables por YAML
-- [x] 5 hitos implementados con guardado de frame + notificación por email (Google Apps Script)
+- [x] 5 hitos implementados con guardado de frame
+- [x] Notificación por email al disparar hito (Google Apps Script)
 - [x] Notificación Telegram al disparar hito (push con foto + comandos interactivos)
 - [x] Registro de cada detección en SQLite (timestamp, personaje, zona)
-- [x] Tracking de trayectorias con Supervision
 - [x] **Pruebas de integración con stream real** — superadas
 
 ---
@@ -265,13 +241,12 @@ El mínimo presentable y funcional:
 
 - [x] Panel web con stream en directo, histórico y gráficas temporales (Dash + Plotly)
 - [x] Simulador de hitos — inyecta frames del dataset para probar el pipeline sin necesidad del stream real
-- [x] Panel de información de reentrenamiento del modelo — métricas, curvas y resultados por clase
+- [x] Panel de información del modelo — métricas, curvas y resultados por clase; tooltips ℹ en cada gráfica, bloque de conclusiones con valoración por clase
 - [x] Bot de Telegram — push automático de hitos con foto + comandos interactivos (`/donde`, `/cuantos`, `/captura`, `/estado`)
 - [x] Síntesis de voz con Kokoro TTS — cola automática en el panel, botón manual en el drawer, toggle 🔊/🔇
 - [x] Mapa de calor — acumulación con decay temporal, colormap JET, toggle en el panel
 - [x] Trayectorias por personaje — trail con fade y color único por ID, toggle en el panel
 - [x] Verificación paralela de hitos — múltiples hitos verificados simultáneamente con ThreadPoolExecutor
-- [x] Panel de modelo mejorado — tooltips ℹ en cada gráfica con explicación de elementos, bloque de conclusiones con valoración por clase en la matriz de confusión
 - [x] Selector de zonas custom — editor canvas HTML5 interactivo sobre el frame en directo: dibujado, resize por arista/esquina, anti-solapamiento entre zonas, colores coordinados con el stream
 - [x] Galería de capturas — drawer con filtros por categoría (Manuales / Automáticas) y por tipo de hito; lightbox de pantalla completa al hacer clic en cada imagen
 - [x] **Despliegue Docker** — imagen multi-stage CPU, panel servido con Waitress, volúmenes para BD/capturas/modelo, UID/GID configurables por build-arg para que los bind-mounts sean escribibles
