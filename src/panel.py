@@ -51,14 +51,14 @@ _ANCHO_STREAM = 960
 _HEATMAP_CAP   = 3.0    # pico post-blur por detección es ~1.8; cap=3 → amarillo a 1 paso, rojo a ~2
 _HEATMAP_DECAY = 0.990  # factor de decay por frame (~50% en 3 s a 25 fps)
 _HEATMAP_RADIO = 20     # radio fijo del punto de calor en píxeles (igual para todos los personajes)
-_TRAIL_LONGITUD = 100   # posiciones por personaje (~4 s a 25 fps)
-_TRAIL_GROSOR   = 3     # grosor máximo de la línea de trayectoria
+_TRAIL_LONGITUD    = 300  # posiciones por personaje (~12 s a 25 fps)
+_TRAIL_GROSOR      = 6    # grosor máximo de la línea de trayectoria
+_TRAIL_EXPIRACION  = 150  # frames sin detectar antes de borrar la trayectoria (~6 s a 25 fps)
 _INTERVALO_REFRESCO_MS = 2000
 _VENTANA_FPS = 30
 _COLORES_ZONA = {
-    "fauna": (0, 200, 0),
-    "esquina_norte": (0, 200, 220),
-    "esquina_sur": (200, 0, 200),
+    "zona_izquierda": (0, 200, 220),
+    "zona_derecha": (200, 0, 200),
 }
 _COLOR_ZONA_DEFAULT = (180, 180, 180)
 _COLORES_HITO = {
@@ -109,6 +109,9 @@ class Panel:
         self._lock_heatmap = threading.Lock()
         self._tracking_activo = False
         self._trails: dict[int, deque] = {}
+        self._trail_class_ids: dict[int, int] = {}   # tracker_id → class_id
+        self._trail_ultimo_frame: dict[int, int] = {}
+        self._frame_trail: int = 0
         self._lock_trails = threading.Lock()
         self._notificador = None
         self._gestor_eventos = None
@@ -294,8 +297,12 @@ class Panel:
                             style={"flex": "1.6"},
                             children=[
                                 html.Div(
+                                    id="stream-wrapper",
                                     className="stream-wrapper",
-                                    children=[html.Img(src="/stream")],
+                                    children=[
+                                        html.Img(src="/stream"),
+                                        html.Button("⛶", id="btn-fullscreen", className="btn-fullscreen-overlay"),
+                                    ],
                                 ),
                                 html.Div(
                                     className="controles",
@@ -1497,12 +1504,10 @@ class Panel:
 
         zonas_display = self._zonas_custom if self._zonas_custom is not None else self._zonas
         for nombre, zona in zonas_display.items():
-            if nombre == "fauna":
-                continue
             if self._zonas_custom is not None:
-                # zona_custom_1 → color norte, zona_custom_2 → color sur
+                # zona_custom_1 → color izquierda, zona_custom_2 → color derecha
                 color = _COLORES_ZONA.get(
-                    "esquina_norte" if nombre == "zona_custom_1" else "esquina_sur",
+                    "zona_izquierda" if nombre == "zona_custom_1" else "zona_derecha",
                     _COLOR_ZONA_DEFAULT,
                 )
             else:
@@ -1529,8 +1534,9 @@ class Panel:
                     cy = int(by1)  # suelo donde pisa el personaje
                     cv2.circle(self._acum_heatmap, (cx, cy), _HEATMAP_RADIO, 2.0, -1)
 
-        if detecciones is not None and len(detecciones) > 0 and detecciones.tracker_id is not None:
-            with self._lock_trails:
+        with self._lock_trails:
+            self._frame_trail += 1
+            if detecciones is not None and len(detecciones) > 0 and detecciones.tracker_id is not None:
                 for i, tid in enumerate(detecciones.tracker_id):
                     tid_int = int(tid)
                     bx0, by0, bx1, by1 = detecciones.xyxy[i]
@@ -1539,6 +1545,14 @@ class Panel:
                     if tid_int not in self._trails:
                         self._trails[tid_int] = deque(maxlen=_TRAIL_LONGITUD)
                     self._trails[tid_int].append((cx, cy))
+                    self._trail_class_ids[tid_int] = int(detecciones.class_id[i])
+                    self._trail_ultimo_frame[tid_int] = self._frame_trail
+            expirados = [tid for tid, f in self._trail_ultimo_frame.items()
+                         if self._frame_trail - f > _TRAIL_EXPIRACION]
+            for tid in expirados:
+                self._trails.pop(tid, None)
+                self._trail_class_ids.pop(tid, None)
+                self._trail_ultimo_frame.pop(tid, None)
 
         if self._heatmap_activo:
             with self._lock_heatmap:
@@ -1552,13 +1566,16 @@ class Panel:
         if self._tracking_activo:
             with self._lock_trails:
                 trails_copia = {tid: list(pts) for tid, pts in self._trails.items() if len(pts) >= 2}
+                class_ids_copia = dict(self._trail_class_ids)
+            paleta = sv.ColorPalette.DEFAULT
             for tid, pts in trails_copia.items():
-                color = _color_por_id(tid)
+                c = paleta.by_idx(class_ids_copia.get(tid, 0))
+                color_bgr = (c.b, c.g, c.r)
                 n = len(pts)
                 for i in range(1, n):
-                    alpha = i / n
-                    color_fade = tuple(int(c * alpha) for c in color)
-                    grosor = max(1, int(_TRAIL_GROSOR * (0.4 + 0.6 * alpha)))
+                    alpha = 0.25 + 0.75 * (i / n)
+                    color_fade = tuple(int(ch * alpha) for ch in color_bgr)
+                    grosor = max(2, int(_TRAIL_GROSOR * (0.5 + 0.5 * (i / n))))
                     cv2.line(frame, pts[i - 1], pts[i], color_fade, grosor, cv2.LINE_AA)
 
         if detecciones is not None and len(detecciones) > 0:
@@ -1702,12 +1719,6 @@ def _construir_galeria_contenido(panel: "Panel", filtro: dict) -> html.Div:
         children=cards,
     )
 
-
-def _color_por_id(tracker_id: int) -> tuple[int, int, int]:
-    h = (tracker_id * 47) % 180
-    color_hsv = np.uint8([[[h, 220, 220]]])
-    bgr = cv2.cvtColor(color_hsv, cv2.COLOR_HSV2BGR)[0][0]
-    return int(bgr[0]), int(bgr[1]), int(bgr[2])
 
 
 def _cargar_resultados_csv() -> dict[str, list]:

@@ -1,3 +1,41 @@
+document.addEventListener('click', function (e) {
+    if (e.target.id !== 'btn-fullscreen') return;
+    var wrapper = document.getElementById('stream-wrapper');
+    if (!wrapper) return;
+    if (!document.fullscreenElement) {
+        wrapper.requestFullscreen();
+    } else {
+        document.exitFullscreen();
+    }
+});
+
+(function () {
+    var _timer = null;
+
+    function _mostrarBoton() {
+        var btn = document.getElementById('btn-fullscreen');
+        if (btn) btn.style.opacity = '1';
+    }
+
+    function _ocultarBoton() {
+        var btn = document.getElementById('btn-fullscreen');
+        if (btn) btn.style.opacity = '0';
+    }
+
+    document.addEventListener('mousemove', function () {
+        if (!document.fullscreenElement) return;
+        _mostrarBoton();
+        clearTimeout(_timer);
+        _timer = setTimeout(_ocultarBoton, 3000);
+    });
+
+    document.addEventListener('fullscreenchange', function () {
+        if (!document.fullscreenElement) {
+            clearTimeout(_timer);
+        }
+    });
+})();
+
 window.addEventListener('load', function () {
     // Desbloquea el elemento <audio> en el primer click del usuario para
     // que autoplay funcione cuando el panel reproduce hitos automáticamente.

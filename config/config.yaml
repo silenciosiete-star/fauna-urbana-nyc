@@ -7,7 +7,7 @@ stream:
 
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
-  confianza_minima: 0.20
+  confianza_minima: 0.01
 
 gemma:
   # Proveedor activo: cambiar con GEMMA_PROVEEDOR en .env
@@ -33,17 +33,15 @@ gemma:
     10: "transformer"
 
 zonas:
-  # Frame 1920×1080. La zona de interés cubre la plaza peatonal de Times Square.
-  # esquina_norte y esquina_sur la dividen en mitad superior e inferior.
-  - nombre: "fauna"
+  # Frame 1920×1080. Stream alternativo a9J1OP_x5Rg.
+  # zona_izquierda: 45% izquierdo × franja inferior 45% (x=0..864, y=594..1080)
+  # zona_derecha:   55% restante × misma franja inferior  (x=864..1920, y=594..1080)
+  - nombre: "zona_izquierda"
     deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
-    puntos: [[750, 440], [1920, 440], [1920, 1080], [750, 1080]]
-  - nombre: "esquina_norte"
+    puntos: [[0, 594], [864, 594], [864, 1080], [0, 1080]]
+  - nombre: "zona_derecha"
     deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
-    puntos: [[650, 440], [1920, 440], [1920, 790], [650, 790]]
-  - nombre: "esquina_sur"
-    deteccion: ["batman", "deadpool", "elmo", "estatua_libertad", "gorila", "mickey_mouse", "minnie_mouse", "sonic", "spiderman", "super_mario", "transformer"]
-    puntos: [[500, 790], [1920, 790], [1920, 1080], [500, 1080]]
+    puntos: [[864, 594], [1920, 594], [1920, 1080], [864, 1080]]
 
 hitos:
   frames_consecutivos: 5  # Frames que debe cumplirse la condición para disparar el hito
