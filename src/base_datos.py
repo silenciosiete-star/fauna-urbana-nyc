@@ -21,12 +21,15 @@ CREATE TABLE IF NOT EXISTS hitos (
 )
 """
 
+_CACHE_LIMITE = 500   # tamaño máximo del caché en memoria; cubre todas las consultas del panel
+
 
 class BaseDatos:
 
     def __init__(self, ruta: str):
         self._ruta = ruta
         self._lock = threading.Lock()
+        self._cache: list[dict] | None = None
         Path(ruta).parent.mkdir(parents=True, exist_ok=True)
         with self._conectar() as con:
             con.execute(_CREAR_TABLA)
@@ -68,15 +71,19 @@ class BaseDatos:
                         ",".join(errores) if errores else "",
                     ),
                 )
+            self._cache = None  # invalidar caché tras inserción
         logger.debug(f"Hito registrado en BD: {hito.tipo} ({'confirmado' if hito.confirmado else 'falso positivo'})")
 
     def hitos_recientes(self, limite: int = 50) -> list[dict]:
         with self._lock:
-            with self._conectar() as con:
-                filas = con.execute(
-                    "SELECT * FROM hitos ORDER BY marca_tiempo DESC LIMIT ?", (limite,)
-                ).fetchall()
-        return [dict(fila) for fila in filas]
+            if self._cache is None:
+                with self._conectar() as con:
+                    filas = con.execute(
+                        "SELECT * FROM hitos ORDER BY marca_tiempo DESC LIMIT ?",
+                        (_CACHE_LIMITE,),
+                    ).fetchall()
+                self._cache = [dict(fila) for fila in filas]
+            return list(self._cache[:limite])
 
     # ------------------------------------------------------------------
 

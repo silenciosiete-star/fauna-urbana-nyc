@@ -100,6 +100,7 @@ class Panel:
         self._hilo_frames: threading.Thread | None = None
         self._ultimo_tracking: ResultadoTracking | None = None
         self._ultimo_frame: np.ndarray | None = None
+        self._ultimo_jpeg: bytes | None = None
         self._lock_frame = threading.Lock()
         self._tiempos_frame: deque = deque(maxlen=_VENTANA_FPS)
         self._anotador_cajas = sv.BoxAnnotator()
@@ -190,28 +191,30 @@ class Panel:
             frame_anotado = self._anotar_frame(frame, simulando)
             alto = int(frame_anotado.shape[0] * _ANCHO_STREAM / frame_anotado.shape[1])
             frame_redim = cv2.resize(frame_anotado, (_ANCHO_STREAM, alto))
+            # Codificar JPEG una sola vez por frame; todos los clientes
+            # de /stream comparten el mismo buffer.
+            ok, buf = cv2.imencode(".jpg", frame_redim, [cv2.IMWRITE_JPEG_QUALITY, 75])
             with self._lock_frame:
                 self._ultimo_frame = frame_redim
+                if ok:
+                    self._ultimo_jpeg = buf.tobytes()
 
     def _generar_mjpeg(self):
-        ultimo_buffer: bytes | None = None
-        while True:
-            simulando = self._simulador is not None and self._simulador.simulando is not None
-            if not self._pausado or simulando:
+        try:
+            while True:
                 with self._lock_frame:
-                    frame = self._ultimo_frame
-                if frame is not None:
-                    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                    if ok:
-                        ultimo_buffer = buf.tobytes()
-            if ultimo_buffer:
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n"
-                    + ultimo_buffer
-                    + b"\r\n"
-                )
-            time.sleep(1 / 25)
+                    buf = self._ultimo_jpeg
+                if buf:
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n"
+                        + buf
+                        + b"\r\n"
+                    )
+                time.sleep(1 / 25)
+        except (GeneratorExit, BrokenPipeError, ConnectionResetError):
+            # Cliente desconectado: salir limpiamente
+            return
 
     def _crear_app(self) -> Dash:
         app = Dash(
@@ -1038,7 +1041,6 @@ class Panel:
                     ),
                 ]))
 
-            acciones_lista = [a for a in (data.get("acciones") or "").split(",") if a]
             audio_url_hito = (
                 f"/audio/audio_{int(data['marca_tiempo'] * 1000)}.wav"
                 if confirmado and "voz" in acciones_lista else None

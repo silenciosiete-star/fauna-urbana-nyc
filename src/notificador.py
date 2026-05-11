@@ -5,13 +5,17 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import cv2
 from loguru import logger
 
 from .base_datos import BaseDatos
 from .verificador import HitoVerificado
+
+_AUDIO_MAX_EDAD_S = 60 * 60          # eliminar audios TTS de más de 1 h
+_INTERVALO_LIMPIEZA_S = 10 * 60      # ejecutar limpieza cada 10 min
+_TELEGRAM_TIMEOUT_S = 10             # tiempo máximo de espera por Telegram
 
 # Sustituye palabras inglesas por su pronunciación aproximada en español
 # para que espeak-ng (backend de Kokoro) las vocalice correctamente.
@@ -58,6 +62,7 @@ class Notificador:
         self._activo = False
         self._hilo: threading.Thread | None = None
         self._pipeline_tts = None
+        self._lock_pipeline_tts = threading.Lock()
         self._cola_audio: list[str] = []
         self._lock_cola_audio = threading.Lock()
         self._preparando: list[dict] = []
@@ -70,16 +75,43 @@ class Notificador:
         self._hilo.start()
         if self._cfg_notif.get("tts", {}).get("activo", False):
             threading.Thread(target=self._precargar_tts, daemon=True).start()
+        threading.Thread(target=self._bucle_limpieza, daemon=True).start()
         logger.info("Notificador iniciado")
 
     def _precargar_tts(self) -> None:
         try:
             from kokoro import KPipeline
-            logger.info("Pre-cargando pipeline Kokoro TTS...")
-            self._pipeline_tts = KPipeline(lang_code="e")
-            logger.info("Kokoro TTS listo")
+            with self._lock_pipeline_tts:
+                if self._pipeline_tts is not None:
+                    return
+                logger.info("Pre-cargando pipeline Kokoro TTS...")
+                self._pipeline_tts = KPipeline(lang_code="e")
+                logger.info("Kokoro TTS listo")
         except Exception as error:
             logger.error(f"Error pre-cargando TTS: {error}")
+
+    def _bucle_limpieza(self) -> None:
+        while self._activo:
+            self._limpiar_audios_viejos()
+            for _ in range(_INTERVALO_LIMPIEZA_S):
+                if not self._activo:
+                    return
+                time.sleep(1)
+
+    def _limpiar_audios_viejos(self) -> None:
+        if not self._carpeta_capturas.exists():
+            return
+        umbral = time.time() - _AUDIO_MAX_EDAD_S
+        eliminados = 0
+        for ruta in self._carpeta_capturas.glob("audio_*.wav"):
+            try:
+                if ruta.stat().st_mtime < umbral:
+                    ruta.unlink()
+                    eliminados += 1
+            except OSError:
+                pass
+        if eliminados:
+            logger.debug(f"Limpieza TTS: {eliminados} audios eliminados")
 
     def detener(self) -> None:
         self._activo = False
@@ -138,22 +170,26 @@ class Notificador:
 
         logger.info(f"Hito confirmado: {hito.tipo} — {hito.mensaje}")
 
+        # Telegram corre asíncrono en su propio loop; lanzamos sin bloquear
+        # para que TTS pueda generarse en paralelo en este hilo.
+        futuro_tg = None
         if self._bot_telegram:
-            futuro = self._bot_telegram.enviar_hito(hito)
-            if futuro is None:
+            futuro_tg = self._bot_telegram.enviar_hito(hito)
+            if futuro_tg is None:
                 logger.warning("Telegram no enviado — bot inactivo (¿falta TELEGRAM_TOKEN?)")
                 errores.append("telegram")
-            else:
-                try:
-                    futuro.result(timeout=15)
-                except Exception as error:
-                    logger.error(f"Error enviando Telegram: {error}")
-                    errores.append("telegram")
 
         if tts_activo and hito.mensaje:
             # TTS antes de escribir en BD: hito y audio llegan al panel a la vez
             if not self._generar_tts(hito.mensaje, hito.marca_tiempo):
                 errores.append("voz")
+
+        if futuro_tg is not None:
+            try:
+                futuro_tg.result(timeout=_TELEGRAM_TIMEOUT_S)
+            except Exception as error:
+                logger.error(f"Error enviando Telegram: {error}")
+                errores.append("telegram")
 
         self._bd.registrar_hito(hito, ruta_frame, acciones, errores)
 
@@ -175,9 +211,11 @@ class Notificador:
             from kokoro import KPipeline
 
             if self._pipeline_tts is None:
-                logger.info("Cargando pipeline Kokoro TTS (primera vez)...")
-                self._pipeline_tts = KPipeline(lang_code="e")
-                logger.info("Kokoro TTS listo")
+                with self._lock_pipeline_tts:
+                    if self._pipeline_tts is None:
+                        logger.info("Cargando pipeline Kokoro TTS (primera vez)...")
+                        self._pipeline_tts = KPipeline(lang_code="e")
+                        logger.info("Kokoro TTS listo")
 
             chunks = []
             for _, _, audio in self._pipeline_tts(_normalizar_tts(texto), voice="ef_dora"):

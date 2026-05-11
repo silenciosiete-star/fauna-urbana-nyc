@@ -65,6 +65,9 @@ class GestorEventos:
         # Zonas personalizadas para conflicto_identidad (None = usar self._zonas)
         self._zonas_conflicto: dict[str, Zona] | None = None
 
+        # Cooldowns suspendidos durante una simulación, restaurados al terminar
+        self._cooldowns_guardados: dict[str, float | None] = {}
+
         self._activo = False
         self._hilo: threading.Thread | None = None
         self.en_pausa: bool = False
@@ -98,7 +101,7 @@ class GestorEventos:
             self._ultimo_avistamiento["gorila"] = time.time() - 31 * 60
 
     def restaurar_cooldowns(self) -> None:
-        for t, v in getattr(self, "_cooldowns_guardados", {}).items():
+        for t, v in self._cooldowns_guardados.items():
             if v is None:
                 self._ultimo_disparo.pop(t, None)
             else:

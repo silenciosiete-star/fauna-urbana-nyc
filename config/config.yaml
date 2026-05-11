@@ -7,14 +7,14 @@ stream:
 
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
-  confianza_minima: 0.01
+  confianza_minima: 0.2
 
 gemma:
   # Proveedor activo: cambiar con GEMMA_PROVEEDOR en .env
   #   "google"  → desarrollo: Gemini 2.5 Flash (Google AI Studio, requiere GEMINI_API_KEY)
   #              Nota: Gemma 4 NO soporta tool calling vía Google AI Studio — se usa Gemini 2.5 Flash.
   #   "ollama"  → producción: Gemma 4 local en 192.168.0.135 (sí soporta tool calling)
-  proveedor: "google"
+  proveedor: "ollama"
   modelo_nombre: "google/gemma-4-4B-it"    # HuggingFace Inference API (no usado actualmente)
   gemini_modelo: "gemini-2.5-flash"        # Google AI Studio — Gemma 4 no soporta tool calling aquí
   ollama_modelo: "gemma4:latest"           # Ollama local — soporta tool calling
@@ -75,7 +75,6 @@ hitos:
     cooldown_segundos: 180
 
 panel:
-  activo: true
   puerto: 8050
 
 notificaciones:

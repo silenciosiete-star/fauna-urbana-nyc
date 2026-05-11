@@ -220,7 +220,7 @@ class Verificador:
         self.cola_entrada = cola_entrada
         self.cola_salida: queue.Queue = queue.Queue(maxsize=10)
         self._config = config_gemma
-        self._proveedor = os.getenv("GEMMA_PROVEEDOR", config_gemma.get("proveedor", "huggingface"))
+        self._proveedor = os.getenv("GEMMA_PROVEEDOR", config_gemma.get("proveedor", "ollama"))
         self._timeout = config_gemma.get("timeout_segundos", 15)
         self._email_activo = config_notificaciones.get("email", {}).get("activo", False)
         self._tts_activo = config_notificaciones.get("tts", {}).get("activo", False)

@@ -1,9 +1,6 @@
 """Punto de entrada. Arranca todos los hilos y los conecta."""
-import os
 import signal
 import sys
-
-os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 import yaml
 from dotenv import load_dotenv
@@ -20,7 +17,6 @@ from src.bot_telegram import BotTelegram
 from src.notificador import Notificador
 from src.panel import Panel
 from src.simulador import Simulador
-from src.visualizador import Visualizador
 
 load_dotenv()
 
@@ -73,34 +69,27 @@ def main() -> None:
         bot_telegram=bot_telegram,
     )
 
-    if config.get("panel", {}).get("activo", False):
-        simulador = Simulador(
-            capturador=capturador,
-            gestor_eventos=gestor_eventos,
-        )
-        interfaz = Panel(
-            cola_frames=capturador.cola_display,
-            cola_tracking=rastreador.cola_display,
-            zonas=zonas,
-            base_datos=base_datos,
-            puerto=config["panel"]["puerto"],
-            carpeta_capturas=config["capturas"]["carpeta"],
-        )
-        interfaz.conectar_simulador(simulador)
-        interfaz.conectar_verificador(verificador)
-        interfaz.conectar_notificador(notificador)
-        interfaz.conectar_gestor_eventos(gestor_eventos)
-    else:
-        interfaz = Visualizador(
-            cola_frames=capturador.cola_display,
-            cola_tracking=rastreador.cola_display,
-            zonas=zonas,
-        )
+    simulador = Simulador(
+        capturador=capturador,
+        gestor_eventos=gestor_eventos,
+    )
+    panel = Panel(
+        cola_frames=capturador.cola_display,
+        cola_tracking=rastreador.cola_display,
+        zonas=zonas,
+        base_datos=base_datos,
+        puerto=config["panel"]["puerto"],
+        carpeta_capturas=config["capturas"]["carpeta"],
+    )
+    panel.conectar_simulador(simulador)
+    panel.conectar_verificador(verificador)
+    panel.conectar_notificador(notificador)
+    panel.conectar_gestor_eventos(gestor_eventos)
 
     modulos = [capturador, detector, rastreador, gestor_eventos, verificador, notificador]
     if bot_telegram:
         modulos.append(bot_telegram)
-    modulos.append(interfaz)
+    modulos.append(panel)
 
     def apagar(sig, frame):
         logger.info("Señal de parada recibida. Deteniendo módulos...")

@@ -11,6 +11,8 @@ _INTERVALO_RECONEXION_HLS_S = 300  # Renovar URL del stream cada 5 min (expira)
 
 _SEGUNDOS_RECONEXION = 5
 _MAX_FRAMES_COLA = 10
+_TIMEOUT_OPEN_MS = 8000   # ms para abrir el stream antes de declarar fallo
+_TIMEOUT_READ_MS = 8000   # ms para leer un frame antes de reconectar
 
 
 class CapturadorStream:
@@ -52,7 +54,13 @@ class CapturadorStream:
             try:
                 logger.info("Obteniendo URL del stream...")
                 url_directa = self._obtener_url_directa()
-                cap = cv2.VideoCapture(url_directa)
+                cap = cv2.VideoCapture(url_directa, cv2.CAP_FFMPEG)
+                # Timeouts a nivel de FFmpeg para evitar que cap.read()
+                # se quede bloqueado indefinidamente si la red cae.
+                if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _TIMEOUT_OPEN_MS)
+                if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _TIMEOUT_READ_MS)
 
                 if not cap.isOpened():
                     raise RuntimeError("No se pudo abrir el stream")
