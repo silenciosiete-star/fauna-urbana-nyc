@@ -338,7 +338,7 @@ class Panel:
                                         html.Button("📊  Modelo", id="btn-modelo", className="btn-control", n_clicks=0),
                                         html.Button("🌡  Calor", id="btn-calor", className="btn-control", n_clicks=0),
                                         html.Button("↗  Trayectorias", id="btn-trayectorias", className="btn-control", n_clicks=0),
-                                        html.Button("⬜ Zona Custom", id="btn-zonas", className="btn-control", n_clicks=0),
+                                        html.Button("✏️  Zona Custom", id="btn-zonas", className="btn-control", n_clicks=0),
                                         html.Span(id="msg-captura", style={"display": "none"}),
                                         html.Span(id="msg-simular", className="msg-control"),
                                     ],
@@ -935,9 +935,12 @@ class Panel:
             if ruta_frame:
                 nombre_archivo = Path(ruta_frame).name
                 img_bloque = [html.Img(
+                    id="detalle-frame-img",
                     src=f"/captura-img/{nombre_archivo}",
+                    n_clicks=0,
                     style={"width": "100%", "borderRadius": "6px", "display": "block",
-                           "marginBottom": "16px", "border": f"1px solid {color}44"},
+                           "marginBottom": "16px", "border": f"1px solid {color}44",
+                           "cursor": "zoom-in"},
                 )]
 
             cuerpo = [
@@ -1313,6 +1316,21 @@ class Panel:
             prevent_initial_call=True,
         )
 
+        app.clientside_callback(
+            """
+            function(n_clicks) {
+                if (!n_clicks) return window.dash_clientside.no_update;
+                var img = document.getElementById('detalle-frame-img');
+                if (!img || !img.src) return window.dash_clientside.no_update;
+                var nombre = img.src.split('/').pop();
+                return {nombre: nombre, t: Date.now()};
+            }
+            """,
+            Output("galeria-img-ampliada", "data", allow_duplicate=True),
+            Input("detalle-frame-img", "n_clicks"),
+            prevent_initial_call=True,
+        )
+
         @app.callback(
             Output("btn-zonas", "className"),
             Output("btn-zonas", "children"),
@@ -1321,8 +1339,8 @@ class Panel:
         )
         def actualizar_btn_zonas(activas):
             if activas:
-                return "btn-control activo", "⬜ Zona Custom"
-            return "btn-control", "⬜ Zona Custom"
+                return "btn-control activo", "✏️  Zona Custom"
+            return "btn-control", "✏️  Zona Custom"
 
         @app.callback(
             Output("galeria-img-ampliada", "data"),
