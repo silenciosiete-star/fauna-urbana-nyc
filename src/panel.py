@@ -126,6 +126,7 @@ class Panel:
     def conectar_simulador(self, simulador: Simulador) -> None:
         self._simulador = simulador
         self._capturador = simulador._capturador
+        self._url_stream_original = simulador._capturador.url
 
     def conectar_verificador(self, verificador: Verificador) -> None:
         self._verificador = verificador
@@ -270,6 +271,7 @@ class Panel:
                 dcc.Store(id="menu-posicion", data="abajo"),
                 dcc.Store(id="audio-url-hito", data=None),
                 dcc.Store(id="cola-audio-nuevos", data=[]),
+                dcc.Store(id="demo-activo", data=False),
                 dcc.Store(id="zonas-custom-activas", data=False),
                 dcc.Store(id="zona-editor-formas", data=[]),
                 dcc.Store(id="zona-editor-info", data=None),
@@ -312,6 +314,7 @@ class Panel:
                                         html.Button("⏸  Pausar", id="btn-pausa", className="btn-control", n_clicks=0),
                                         html.Button("📸  Captura", id="btn-captura", className="btn-control", n_clicks=0),
                                         html.Button("🖼  Galería", id="btn-galeria", className="btn-control", n_clicks=0),
+                                        html.Button("📹  Demo", id="btn-demo", className="btn-control", n_clicks=0),
                                         html.Div(
                                             style={"position": "relative", "display": "inline-block"},
                                             children=[
@@ -717,6 +720,23 @@ class Panel:
             if self._heatmap_activo:
                 return "🌡  Calor", "btn-control activo"
             return "🌡  Calor", "btn-control"
+
+        @app.callback(
+            Output("btn-demo", "children"),
+            Output("btn-demo", "className"),
+            Output("demo-activo", "data"),
+            Input("btn-demo", "n_clicks"),
+            State("demo-activo", "data"),
+            prevent_initial_call=True,
+        )
+        def toggle_demo(_, demo_activo):
+            nuevo_estado = not demo_activo
+            if self._capturador:
+                url = "demo_times_square.mp4" if nuevo_estado else self._url_stream_original
+                self._capturador.cambiar_url(url)
+            if nuevo_estado:
+                return "📹  Demo", "btn-control activo", True
+            return "📹  Demo", "btn-control", False
 
         @app.callback(
             Output("btn-trayectorias", "children"),
