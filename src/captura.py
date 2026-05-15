@@ -24,7 +24,6 @@ class CapturadorStream:
         self.pausado: bool = False
         self._activo = False
         self._hilo: threading.Thread | None = None
-        self._evento_reconectar = threading.Event()
 
     def iniciar(self) -> None:
         self._activo = True
@@ -34,15 +33,9 @@ class CapturadorStream:
 
     def detener(self) -> None:
         self._activo = False
-        self._evento_reconectar.set()
         if self._hilo:
             self._hilo.join(timeout=10)
         logger.info("Capturador detenido")
-
-    def cambiar_url(self, nueva_url: str) -> None:
-        self.url = nueva_url
-        self._evento_reconectar.set()
-        logger.info(f"Capturador: cambiando fuente a {nueva_url}")
 
     # ------------------------------------------------------------------
 
@@ -62,9 +55,8 @@ class CapturadorStream:
             return info["url"]
 
     def _bucle_captura(self) -> None:
+        es_archivo = self._es_archivo_local()
         while self._activo:
-            self._evento_reconectar.clear()
-            es_archivo = self._es_archivo_local()
             try:
                 if not es_archivo:
                     logger.info("Obteniendo URL del stream...")
@@ -84,7 +76,7 @@ class CapturadorStream:
                 intervalo = 1.0 / fps
                 t_renovar = time.monotonic() + (_INTERVALO_RECONEXION_HLS_S if not es_archivo else float("inf"))
 
-                while self._activo and not self._evento_reconectar.is_set():
+                while self._activo:
                     if time.monotonic() >= t_renovar:
                         logger.info("Renovando URL del stream HLS...")
                         break
