@@ -208,16 +208,11 @@ El capturador las detecta automáticamente.
 
 Si el stream de YouTube no está disponible, el sistema puede leer un vídeo local en su lugar. El repositorio incluye `demo_times_square.mp4` (1 minuto, 1080p, grabado del stream `a9J1OP_x5Rg`) gestionado con **Git LFS**.
 
-Para activarlo, cambia una línea en `config/config.yaml`:
+Para alternar en caliente sin reiniciar, pulsa el botón **📹 Demo** en la barra de controles del panel: el capturador reconecta a `demo_times_square.mp4`, omite yt-dlp y rebobina al llegar al final (bucle indefinido). Pulsa de nuevo para volver al stream original definido en `config/config.yaml`.
 
-```yaml
-stream:
-  url: "demo_times_square.mp4"
-```
+Alternativa permanente (sin botón): edita `stream.url` en `config/config.yaml` a `"demo_times_square.mp4"` y reinicia el contenedor.
 
-El capturador detecta automáticamente que es un archivo local, omite yt-dlp y rebobina el vídeo al llegar al final, por lo que el demo corre en bucle indefinidamente.
-
-Para volver al stream real, restaura la URL de YouTube en la misma línea.
+> En Docker, `demo_times_square.mp4` y la carpeta de artefactos de entrenamiento `modelos/fauna_urbana/` se bind-mountan desde el host (ver [docker-compose.yml](docker-compose.yml)) — no van en la imagen, así que `git lfs pull` en el host es suficiente.
 
 ---
 
@@ -249,6 +244,7 @@ El mínimo presentable y funcional:
 - [x] Verificación paralela de hitos — múltiples hitos verificados simultáneamente con ThreadPoolExecutor
 - [x] Selector de zonas custom — editor canvas HTML5 interactivo sobre el frame en directo: dibujado, resize por arista/esquina, anti-solapamiento entre zonas, colores coordinados con el stream
 - [x] Galería de capturas — drawer con filtros por categoría (Manuales / Automáticas) y por tipo de hito; lightbox de pantalla completa al hacer clic en cada imagen
+- [x] Botón 📹 Demo — alterna en caliente entre stream real y `demo_times_square.mp4` sin reiniciar el contenedor
 - [x] **Despliegue Docker** — imagen multi-stage CPU, panel servido con Waitress, volúmenes para BD/capturas/modelo, UID/GID configurables por build-arg para que los bind-mounts sean escribibles
 
 ---

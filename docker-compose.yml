@@ -14,6 +14,10 @@ services:
     volumes:
       # Modelo fine-tuned (28 MB) — fuera de la imagen para versionar aparte
       - ./modelos/fauna_urbana.pt:/app/modelos/fauna_urbana.pt:ro
+      # Artefactos del entrenamiento (curvas, matriz, results.csv) para la pestaña Modelo del panel
+      - ./modelos/fauna_urbana:/app/modelos/fauna_urbana:ro
+      # Vídeo demo (31 MB, Git LFS) — fuente alternativa al stream
+      - ./demo_times_square.mp4:/app/demo_times_square.mp4:ro
       # Capturas y audios TTS — persisten entre reinicios
       - ./capturas:/app/capturas
       # Directorio para SQLite (no bind-mount de fichero por WAL)
