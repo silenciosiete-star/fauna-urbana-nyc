@@ -11,6 +11,7 @@ from loguru import logger
 from ultralytics import YOLO
 
 _MODELO_GENERICO = "yolo26n.pt"
+_IMGSZ_INFERENCIA = 960  # Modelo entrenado a 1280; 960 es el compromiso para CPU.
 
 
 @dataclass
@@ -72,7 +73,7 @@ class Detector:
             if contador % self.frames_por_inferencia != 0:
                 continue
 
-            resultado = self._modelo(frame, verbose=False, conf=self._confianza_minima)[0]
+            resultado = self._modelo(frame, verbose=False, conf=self._confianza_minima, imgsz=_IMGSZ_INFERENCIA)[0]
             detecciones = sv.Detections.from_ultralytics(resultado)
 
             logger.debug(f"Frame {contador}: {len(detecciones)} detecciones")

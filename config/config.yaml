@@ -3,11 +3,11 @@
 
 stream:
   url: "https://www.youtube.com/watch?v=a9J1OP_x5Rg"  # Times Square Express View (alternativo mientras rnXIjl_Rzy4 está offline)
-  frames_por_inferencia: 8  # Analizar 1 de cada N frames con YOLO (8 para CPU, 4 si hay GPU)
+  frames_por_inferencia: 12  # Analizar 1 de cada N frames con YOLO (12 para CPU @ imgsz=960, 4 si hay GPU)
 
 modelo:
   ruta: "modelos/fauna_urbana.pt"  # Ruta al modelo fine-tuned
-  confianza_minima: 0.2
+  confianza_minima: 0.1
 
 gemma:
   # Proveedor activo: cambiar con GEMMA_PROVEEDOR en .env
@@ -58,7 +58,7 @@ hitos:
 
   hora_punta:
     activo: true
-    personajes_minimos: 6
+    personajes_minimos: 5
     zona: null
     cooldown_segundos: 300
 

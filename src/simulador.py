@@ -53,6 +53,12 @@ class Simulador:
         hito_detectado = False
 
         while time.time() - inicio < _TIMEOUT_S:
+            # Re-sembrar el contador en cada iteración: cualquier frame "en
+            # vuelo" del stream real que llegue al gestor antes que los
+            # inyectados pone _consecutivos[tipo] a 0 y la primera inferencia
+            # válida del simulador ya no dispara. Repuesto a umbral-1 cada
+            # 120 ms tapamos la ventana de carrera.
+            self._gestor._consecutivos[tipo] = self._gestor._umbral - 1
             # avistamiento_raro: re-sembrar timestamp en cada iteración porque
             # _actualizar_avistamientos lo sobreescribe tras cada frame procesado
             if tipo == "avistamiento_raro":

@@ -28,3 +28,7 @@ services:
       - ./config:/app/config:ro
     environment:
       - TZ=Europe/Madrid
+      # Limita el paralelismo interno de PyTorch para que la inferencia no
+      # ahogue al hilo de captura/panel/MJPEG en CPU.
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
